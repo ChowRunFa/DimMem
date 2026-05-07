@@ -1,0 +1,7 @@
+numpy
+requests
+httpx
+openai
+tqdm
+sentence-transformers
+torch
