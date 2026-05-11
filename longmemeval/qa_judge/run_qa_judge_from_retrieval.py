@@ -3,16 +3,20 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
 import requests
 
+THIS_FILE = Path(__file__).resolve()
+LONGMEMEVAL_DIR = THIS_FILE.parents[1]
+SUBMIT_ROOT = THIS_FILE.parents[2]
+if str(LONGMEMEVAL_DIR) not in sys.path:
+    sys.path.insert(0, str(LONGMEMEVAL_DIR))
+
 from prompts.qa_prompts import build_qa_payload
 from prompts.judge_prompts import build_judge_payload
-
-
-SUBMIT_ROOT = Path(__file__).resolve().parents[1]
 RETRIEVAL_ROOT = SUBMIT_ROOT / "results/retrieval"
 QUERY_ANALYSIS_ROOT = SUBMIT_ROOT / "results/query_analysis"
 QA_ROOT = SUBMIT_ROOT / "results/qa"

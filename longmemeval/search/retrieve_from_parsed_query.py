@@ -10,8 +10,8 @@ from typing import Any, Dict, List
 
 
 THIS_FILE = Path(__file__).resolve()
-SUBMIT_ROOT = THIS_FILE.parents[1]
-LONGMEMEVAL_DIR = THIS_FILE.parent
+LONGMEMEVAL_DIR = THIS_FILE.parents[1]
+SUBMIT_ROOT = THIS_FILE.parents[2]
 if str(SUBMIT_ROOT) not in sys.path:
     sys.path.insert(0, str(SUBMIT_ROOT))
 if str(LONGMEMEVAL_DIR) not in sys.path:
