@@ -4,8 +4,7 @@ import json
 import re
 from typing import Any, Dict, List, Tuple
 
-from shared.models.query_analysis_v2 import QueryAnalysisV2, QueryConstraintsV2
-from shared.models.structured_memory_v2 import StructuredMemoryV2
+from models import DimensionMemory, ParsedQuery
 
 from .time_constraints import time_constraint_match_score
 
@@ -70,36 +69,41 @@ def _safe_ratio(numerator: float, denominator: float) -> float:
     return max(0.0, min(1.0, numerator / denominator))
 
 
-def _record_text(record: StructuredMemoryV2) -> str:
-    parts = [record.content]
-    parts.extend(record.entities)
-    parts.extend(_clean(record.dimension.get(key)) for key in ("time", "location", "reason", "purpose"))
+def _record_text(record: Dict[str, Any]) -> str:
+    dimension = DimensionMemory.from_dict(record.get("dimension"))
+    parts = [_clean(record.get("content"))]
+    parts.extend(_clean(x) for x in (record.get("entities") or []) if _clean(x))
+    parts.extend([dimension.time, dimension.location, dimension.reason, dimension.purpose])
+    parts.extend(dimension.keywords)
     return " | ".join(part for part in parts if part)
 
 
-def _record_text_lower(record: StructuredMemoryV2) -> str:
+def _record_text_lower(record: Dict[str, Any]) -> str:
     return _record_text(record).lower()
 
 
-def _answer_field_score(answer_field: str, record: StructuredMemoryV2) -> float:
+def _answer_field_score(answer_field: str, record: Dict[str, Any]) -> float:
+    dimension = DimensionMemory.from_dict(record.get("dimension"))
     field_name = _clean(answer_field).lower() or "content"
     if field_name == "content":
-        return 1.0 if _clean(record.content) else 0.0
+        return 1.0 if _clean(record.get("content")) else 0.0
     if field_name == "time":
-        return 1.0 if (_clean(record.dimension.get("time")) or record.source_time) else 0.0
+        return 1.0 if (dimension.time or record.get("source_time")) else 0.0
     if field_name in {"location", "reason", "purpose"}:
-        return 1.0 if _clean(record.dimension.get(field_name)) else 0.0
+        return 1.0 if getattr(dimension, field_name) else 0.0
+    if field_name == "keywords":
+        return 1.0 if dimension.keywords else 0.0
     return 0.0
 
 
-def _memory_type_score(target_memory_types: List[str], record: StructuredMemoryV2) -> float:
+def _memory_type_score(target_memory_types: List[str], record: Dict[str, Any]) -> float:
     targets = {_clean(value).lower() for value in target_memory_types if _clean(value)}
     if not targets:
         return 0.0
-    return 1.0 if _clean(record.memory_type).lower() in targets else 0.0
+    return 1.0 if _clean(record.get("memory_type")).lower() in targets else 0.0
 
 
-def _location_constraint_score(location_constraints: List[str], record: StructuredMemoryV2) -> float:
+def _location_constraint_score(location_constraints: List[str], record: Dict[str, Any]) -> float:
     constraints = [_clean(value).lower() for value in location_constraints if _clean(value)]
     if not constraints:
         return 0.0
@@ -108,11 +112,11 @@ def _location_constraint_score(location_constraints: List[str], record: Structur
     return _safe_ratio(matched, len(constraints))
 
 
-def _time_constraint_score(time_constraints: List[str], record: StructuredMemoryV2) -> float:
+def _time_constraint_score(time_constraints: List[str], record: Dict[str, Any]) -> float:
     return float(time_constraint_match_score(time_constraints, record)["score"])
 
 
-def _keyword_phrase_score(keywords: List[str], record: StructuredMemoryV2) -> float:
+def _keyword_phrase_score(keywords: List[str], record: Dict[str, Any]) -> float:
     phrases = [_clean(value).lower() for value in keywords if _clean(value)]
     if not phrases:
         return 0.0
@@ -121,7 +125,7 @@ def _keyword_phrase_score(keywords: List[str], record: StructuredMemoryV2) -> fl
     return _safe_ratio(matched, len(phrases))
 
 
-def _keyword_token_overlap_score(keywords: List[str], record: StructuredMemoryV2) -> float:
+def _keyword_token_overlap_score(keywords: List[str], record: Dict[str, Any]) -> float:
     if not keywords:
         return 0.0
     query_tokens = set()
@@ -134,20 +138,22 @@ def _keyword_token_overlap_score(keywords: List[str], record: StructuredMemoryV2
     return _safe_ratio(matched, len(query_tokens))
 
 
-def _constraint_scores(analysis: QueryAnalysisV2, record: StructuredMemoryV2) -> Tuple[float, float]:
-    location_score = _location_constraint_score(analysis.constraints.get("location"), record)
-    time_score = _time_constraint_score(analysis.constraints.get("time"), record)
+def _constraint_scores(analysis: Dict[str, Any], record: Dict[str, Any]) -> Tuple[float, float]:
+    constraints = analysis.get("constraints") if isinstance(analysis.get("constraints"), dict) else {}
+    location_score = _location_constraint_score(constraints.get("location") or [], record)
+    time_score = _time_constraint_score(constraints.get("time") or [], record)
     return time_score, location_score
 
 
-def _structural_score(analysis: QueryAnalysisV2, record: StructuredMemoryV2) -> Dict[str, Any]:
-    answer_field_score = _answer_field_score(analysis.answer_field, record)
-    memory_type_score = _memory_type_score(analysis.target_memory_types, record)
-    time_match = time_constraint_match_score(analysis.constraints.get("time"), record)
+def _structural_score(analysis: Dict[str, Any], record: Dict[str, Any]) -> Dict[str, Any]:
+    constraints = analysis.get("constraints") if isinstance(analysis.get("constraints"), dict) else {}
+    answer_field_score = _answer_field_score(analysis.get("answer_field", "content"), record)
+    memory_type_score = _memory_type_score(analysis.get("target_memory_types") or [], record)
+    time_match = time_constraint_match_score(constraints.get("time") or [], record)
     time_constraint_score = float(time_match["score"])
-    location_constraint_score = _location_constraint_score(analysis.constraints.get("location"), record)
-    keyword_phrase_score = _keyword_phrase_score(analysis.keywords, record)
-    keyword_token_overlap_score = _keyword_token_overlap_score(analysis.keywords, record)
+    location_constraint_score = _location_constraint_score(constraints.get("location") or [], record)
+    keyword_phrase_score = _keyword_phrase_score(analysis.get("keywords") or [], record)
+    keyword_token_overlap_score = _keyword_token_overlap_score(analysis.get("keywords") or [], record)
 
     base_weights = {
         "memory_type": 0.15,
@@ -158,13 +164,13 @@ def _structural_score(analysis: QueryAnalysisV2, record: StructuredMemoryV2) -> 
     }
 
     active_components: Dict[str, float] = {}
-    if analysis.target_memory_types:
+    if analysis.get("target_memory_types"):
         active_components["memory_type"] = memory_type_score
-    if analysis.constraints.get("time"):
+    if constraints.get("time"):
         active_components["time_constraint"] = time_constraint_score
-    if analysis.constraints.get("location"):
+    if constraints.get("location"):
         active_components["location_constraint"] = location_constraint_score
-    if analysis.keywords:
+    if analysis.get("keywords"):
         active_components["keyword_phrase_match"] = keyword_phrase_score
         active_components["keyword_token_overlap"] = keyword_token_overlap_score
 
@@ -194,35 +200,14 @@ def _structural_score(analysis: QueryAnalysisV2, record: StructuredMemoryV2) -> 
     }
 
 
-def map_structured_query(parsed_query: Dict[str, Any]) -> QueryAnalysisV2:
-    dimension = parsed_query.get("dimension") if isinstance(parsed_query.get("dimension"), dict) else {}
-    constraints: Dict[str, List[str]] = {}
-    if _clean(dimension.get("time")):
-        constraints["time"] = [_clean(dimension.get("time"))]
-    if _clean(dimension.get("location")):
-        constraints["location"] = [_clean(dimension.get("location"))]
-
-    analysis = QueryAnalysisV2(
-        query_text=_clean(parsed_query.get("query_anchor")),
-        rewrite=_clean(parsed_query.get("query_anchor")),
-        intent="lookup",
-        answer_field=_clean(parsed_query.get("answer_dim")).lower() or "content",
-        content_query=_clean(parsed_query.get("query_anchor")),
-        target_memory_types=[],
-        entities=[],
-        constraints=QueryConstraintsV2.from_dict(constraints),
-        keywords=_string_list(dimension.get("keywords")),
-        canonical_text=_clean(parsed_query.get("query_anchor")),
-    )
-    analysis.target_memory_types = _string_list(dimension.get("target_memory_type"))
-    analysis.entities = []
-    return analysis
+def map_structured_query(parsed_query: Dict[str, Any]) -> Dict[str, Any]:
+    return ParsedQuery.from_dict(parsed_query).to_search_analysis()
 
 
 def search_structured(
     *,
     parsed_query: Dict[str, Any],
-    records: List[StructuredMemoryV2],
+    records: List[Dict[str, Any]],
     embedding_client: Any,
     top_k: int,
 ) -> Dict[str, Any]:
@@ -232,7 +217,7 @@ def search_structured(
         structural_components = _structural_score(analysis, record)
         structural_score = float(structural_components["score"])
 
-        row = record.to_dict()
+        row = dict(record)
         row.update(
             {
                 "score": structural_score,
@@ -257,7 +242,7 @@ def search_structured(
     )
     return {
         "search_mode": "structured",
-        "mapped_query_analysis": analysis.to_dict(),
+        "mapped_query_analysis": analysis,
         "all_ranked_records": ranked,
         "top_records": ranked[:top_k],
     }

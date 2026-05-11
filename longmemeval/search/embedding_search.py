@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from shared.models.structured_memory_v2 import StructuredMemoryV2
+from models import DimensionMemory, ParsedQuery
 
 
 def _clean(v: Any) -> str:
@@ -29,29 +29,31 @@ def _similarity(embedding_client: Any, left: List[float], right: List[float]) ->
 
 def map_embedding_query(parsed_query: Dict[str, Any]) -> Dict[str, Any]:
     return {
-        "query_text": _clean(parsed_query.get("query_anchor")),
+        "query_text": ParsedQuery.from_dict(parsed_query).query_anchor,
     }
 
 
 def search_embedding(
     *,
     parsed_query: Dict[str, Any],
-    records: List[StructuredMemoryV2],
+    records: List[Dict[str, Any]],
     embedding_client: Any,
     top_k: int,
 ) -> Dict[str, Any]:
     mapped = map_embedding_query(parsed_query)
     query_embedding = _embed_text(embedding_client, mapped["query_text"])
-    record_texts = [
-        " ".join(
+    record_texts = []
+    for record in records:
+        dimension = DimensionMemory.from_dict(record.get("dimension"))
+        text = " ".join(
             [
-                _clean(record.content),
-                _clean(record.dimension.get("reason")),
-                _clean(record.dimension.get("purpose")),
+                _clean(record.get("content")),
+                dimension.reason,
+                dimension.purpose,
             ]
         ).strip()
-        for record in records
-    ]
+        record_texts.append(text)
+
     try:
         record_embeddings = embedding_client.embed_texts(record_texts).embeddings
     except Exception:
@@ -66,7 +68,7 @@ def search_embedding(
 
     ranked: List[Dict[str, Any]] = []
     for record, dense_score in zip(records, dense_scores):
-        row = record.to_dict()
+        row = dict(record)
         row["score"] = float(dense_score)
         row["score_components"] = {
             "dense_cosine_score": float(dense_score),

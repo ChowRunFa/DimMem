@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from shared.models.structured_memory_v2 import StructuredMemoryV2
-
 
 DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 MONTH_ONLY_RE = re.compile(r"^\d{4}-\d{2}$")
@@ -182,26 +180,37 @@ def parse_time_constraint(text: str) -> Optional[TimeConstraint]:
     return None
 
 
-def extract_record_time_spans(record: StructuredMemoryV2) -> List[TimeSpan]:
+def extract_record_time_spans(record: Dict[str, Any]) -> List[TimeSpan]:
     spans: List[TimeSpan] = []
-    raw_dimension_time = _clean(record.dimension.get("time"))
+    dimension = record.get("dimension") if isinstance(record.get("dimension"), dict) else {}
+    raw_dimension_time = _clean(dimension.get("time"))
     if raw_dimension_time:
         span = _parse_time_span(raw_dimension_time)
         if span:
             spans.append(span)
-    if record.source_time is not None:
-        spans.append(
-            TimeSpan(
-                start=record.source_time,
-                end=record.source_time,
-                granularity="datetime",
-                raw=record.source_time.isoformat(),
+    source_time = record.get("source_time")
+    if source_time is not None:
+        if isinstance(source_time, datetime):
+            spans.append(
+                TimeSpan(
+                    start=source_time,
+                    end=source_time,
+                    granularity="datetime",
+                    raw=source_time.isoformat(),
+                )
             )
-        )
+        elif isinstance(source_time, str) and source_time.strip():
+            try:
+                dt = datetime.fromisoformat(source_time.strip())
+                spans.append(
+                    TimeSpan(start=dt, end=dt, granularity="datetime", raw=source_time.strip())
+                )
+            except ValueError:
+                pass
     return spans
 
 
-def time_constraint_match_score(constraints: List[str], record: StructuredMemoryV2) -> Dict[str, Any]:
+def time_constraint_match_score(constraints: List[str], record: Dict[str, Any]) -> Dict[str, Any]:
     cleaned = [_clean(value) for value in constraints if _clean(value)]
     if not cleaned:
         return {
@@ -268,10 +277,10 @@ def time_constraint_match_score(constraints: List[str], record: StructuredMemory
     }
 
 
-def record_satisfies_time_constraint(constraint_text: str, record: StructuredMemoryV2) -> bool:
+def record_satisfies_time_constraint(constraint_text: str, record: Dict[str, Any]) -> bool:
     result = time_constraint_match_score([constraint_text], record)
     return bool(result["matched"])
 
 
-def filter_records_by_time_constraint(records: List[StructuredMemoryV2], constraint_text: str) -> List[StructuredMemoryV2]:
+def filter_records_by_time_constraint(records: List[Dict[str, Any]], constraint_text: str) -> List[Dict[str, Any]]:
     return [record for record in records if record_satisfies_time_constraint(constraint_text, record)]

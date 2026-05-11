@@ -343,7 +343,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-base",
         type=Path,
-        default=Path("/mnt/workspace/zhiyue-L3-TerminalPerceptiveMemory/workspace/qwt/projects/DimMem/evaluation/dimmem/locomo/results/judge_results"),
+        default=Path("./results/locomo_judge"),
     )
     parser.add_argument("--run-name", default="")
     parser.add_argument("--base-url", default="http://127.0.0.1:7790/v1")

@@ -4,7 +4,7 @@ import math
 import re
 from typing import Any, Dict, List
 
-from shared.models.structured_memory_v2 import StructuredMemoryV2
+from models import DimensionMemory, ParsedQuery
 
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -18,23 +18,15 @@ def _tokens(text: str) -> List[str]:
     return TOKEN_RE.findall(_clean(text).lower())
 
 
-def _record_text(record: StructuredMemoryV2) -> str:
-    parts = [
-        _clean(record.content),
-        _clean(record.dimension.get("reason")),
-        _clean(record.dimension.get("purpose")),
-        " ".join([_clean(x) for x in (record.dimension.get("keywords") or []) if _clean(x)]),
-    ]
-    return " | ".join([p for p in parts if p])
+def _record_text(record: Dict[str, Any]) -> str:
+    return DimensionMemory.from_dict(record.get("dimension")).searchable_text(include_content=_clean(record.get("content")))
 
 
 def _build_query_terms(parsed_query: Dict[str, Any]) -> List[str]:
-    dim = parsed_query.get("dimension") if isinstance(parsed_query.get("dimension"), dict) else {}
-    kws = dim.get("keywords") if isinstance(dim.get("keywords"), list) else []
-    text = " ".join([_clean(parsed_query.get("query_anchor"))] + [_clean(x) for x in kws if _clean(x)])
+    query = ParsedQuery.from_dict(parsed_query)
     seen = set()
     terms: List[str] = []
-    for t in _tokens(text):
+    for t in _tokens(query.bm25_text()):
         if t in seen:
             continue
         seen.add(t)
@@ -97,10 +89,10 @@ def _bm25_scores(query_terms: List[str], index: Dict[str, Any], *, k1: float, b:
 
 
 def map_bm25_query(parsed_query: Dict[str, Any]) -> Dict[str, Any]:
-    dim = parsed_query.get("dimension") if isinstance(parsed_query.get("dimension"), dict) else {}
+    query = ParsedQuery.from_dict(parsed_query)
     return {
-        "query_text": _clean(parsed_query.get("query_anchor")),
-        "keywords": [_clean(x) for x in (dim.get("keywords") or []) if _clean(x)],
+        "query_text": query.query_anchor,
+        "keywords": list(query.keywords),
         "query_terms": _build_query_terms(parsed_query),
     }
 
@@ -108,7 +100,7 @@ def map_bm25_query(parsed_query: Dict[str, Any]) -> Dict[str, Any]:
 def search_bm25(
     *,
     parsed_query: Dict[str, Any],
-    records: List[StructuredMemoryV2],
+    records: List[Dict[str, Any]],
     top_k: int,
     k1: float = 1.2,
     b: float = 0.75,
@@ -120,7 +112,7 @@ def search_bm25(
 
     ranked: List[Dict[str, Any]] = []
     for i, record in enumerate(records):
-        row = record.to_dict()
+        row = dict(record)
         row["score"] = float(scores[i])
         row["score_components"] = {
             "bm25_score": float(scores[i]),

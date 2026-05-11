@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Dict, List
 
-from shared.models.structured_memory_v2 import StructuredMemoryV2
+from models import ParsedQuery
 
 from .bm25_search import search_bm25
 from .embedding_search import search_embedding
@@ -46,7 +46,7 @@ def _annotate(row: Dict[str, Any], *, route: str, rank: int) -> Dict[str, Any]:
 def search_top15_content_dedup(
     *,
     parsed_query: Dict[str, Any],
-    records: List[StructuredMemoryV2],
+    records: List[Dict[str, Any]],
     embedding_client: Any,
     top_k: int = 15,
 ) -> Dict[str, Any]:
@@ -96,10 +96,11 @@ def search_top15_content_dedup(
             seen[key] = item
             ranked.append(item)
 
+    query = ParsedQuery.from_dict(parsed_query)
     mapped_query = {
-        "query_text": _clean(parsed_query.get("query_anchor")),
-        "query_anchor": _clean(parsed_query.get("query_anchor")),
-        "dimension": parsed_query.get("dimension") if isinstance(parsed_query.get("dimension"), dict) else {},
+        "query_text": query.query_anchor,
+        "query_anchor": query.query_anchor,
+        "dimension": query.dimension,
         "routes": {
             route: payload.get("mapped_query_analysis", {})
             for route, payload in route_outputs.items()
@@ -126,7 +127,7 @@ def search_top15_content_dedup(
 def search_fused(
     *,
     parsed_query: Dict[str, Any],
-    records: List[StructuredMemoryV2],
+    records: List[Dict[str, Any]],
     embedding_client: Any,
     top_k: int = 15,
     **_: Any,

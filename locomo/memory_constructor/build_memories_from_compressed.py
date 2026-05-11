@@ -18,6 +18,7 @@ if str(LOCOMO_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(LOCOMO_SRC_ROOT))
 
 from prompts.prompts import LOCOMO_STRUCTURED_MEMORY_EXTRACTION_PROMPT, OverlappingContextRules
+from models import DimensionMemory
 
 
 def _clean(value: Any) -> str:
@@ -123,31 +124,13 @@ def _normalize_memory_entry(row: Any, *, source_time_map: Dict[int, str]) -> Dic
         source_id = int(source_id_raw)
     except Exception:
         source_id = None
-    dimension = row.get("dimension") if isinstance(row.get("dimension"), dict) else {}
-
-    keywords: List[str] = []
-    for kw in list(dimension.get("keywords") or []):
-        item = _clean(kw)
-        if item and item not in keywords:
-            keywords.append(item)
-
-    memory_type = _clean(dimension.get("memory_type")).lower()
-    if memory_type not in {"fact", "episodic", "profile"}:
-        memory_type = ""
 
     normalized = {
         "source_id": source_id if source_id is not None else source_id_raw,
         "source_speaker": _clean(row.get("source_speaker")),
         "source_time": source_time_map.get(source_id or -1, ""),
         "content": _clean(row.get("content")),
-        "dimension": {
-            "memory_type": memory_type,
-            "time": _clean(dimension.get("time")),
-            "location": _clean(dimension.get("location")),
-            "reason": _clean(dimension.get("reason")),
-            "purpose": _clean(dimension.get("purpose")),
-            "keywords": keywords,
-        },
+        "dimension": DimensionMemory.from_dict(row.get("dimension")).to_dict(),
     }
     if not normalized["content"]:
         return None
@@ -462,9 +445,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-root",
         type=Path,
-        default=Path(
-            "/mnt/workspace/zhiyue-L3-TerminalPerceptiveMemory/workspace/qwt/projects/DimMem/evaluation/dimmem/locomo/results/memory_results"
-        ),
+        default=Path("./results/locomo_memory"),
     )
     parser.add_argument("--run-name", default="")
     parser.add_argument("--base-url", default="http://127.0.0.1:7790/v1")
