@@ -1,5 +1,5 @@
 """
-本地 / HuggingFace sentence-transformers 嵌入客户端，与 EmbeddingClient 接口对齐。
+Local sentence-transformers embedding client.
 """
 
 from __future__ import annotations
@@ -7,19 +7,25 @@ from __future__ import annotations
 import json
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from .embedding_client import EmbeddingResponse
-
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class EmbeddingResponse:
+    embeddings: List[List[float]]
+    usage: Dict[str, Any]
+    model: str
+    response_time: float
 
 
 class LocalEmbeddingClient:
     """
-    使用 sentence-transformers 在本地或缓存目录加载模型。
-    ``embedding_model`` 可为本地目录、或 HuggingFace 模型 id（如 sentence-transformers/all-MiniLM-L6-v2）。
+    Uses sentence-transformers to load a local or HuggingFace embedding model.
     """
 
     def __init__(
@@ -33,17 +39,11 @@ class LocalEmbeddingClient:
 
         try:
             import torch
-            import importlib.metadata
-
-            # In this workspace, transformers import can spend minutes scanning
-            # every installed dist-info file through packages_distributions().
-            # SentenceTransformer does not need that reverse mapping for local
-            # model loading, so keep startup bounded.
-            importlib.metadata.packages_distributions = lambda: {}
             from sentence_transformers import SentenceTransformer
         except ImportError as e:
             raise ImportError(
-                "本地 embedding 需要安装 sentence-transformers 与 torch，请检查 requirements.txt"
+                "Local embedding requires sentence-transformers and torch. "
+                "Install via: pip install sentence-transformers torch"
             ) from e
 
         self.model = model.strip()
@@ -54,17 +54,13 @@ class LocalEmbeddingClient:
         else:
             dev = "cuda" if torch.cuda.is_available() else "cpu"
 
-        logger.info(f"[LocalEmbeddingClient] Loading SentenceTransformer model={self.model!r} device={dev}")
+        logger.info(f"[LocalEmbeddingClient] Loading model={self.model!r} device={dev}")
         t0 = time.time()
         self._model = SentenceTransformer(self.model, device=dev)
         self.embedding_dim = int(self._model.get_sentence_embedding_dimension())
         logger.info(
-            f"[LocalEmbeddingClient] Ready in {time.time() - t0:.2f}s, embedding_dim={self.embedding_dim}"
+            f"[LocalEmbeddingClient] Ready in {time.time() - t0:.2f}s, dim={self.embedding_dim}"
         )
-
-        self.max_retries = 1
-        self.retry_delay = 1.0
-        self.timeout = 30.0
 
     def embed_texts(self, texts: List[str]) -> EmbeddingResponse:
         if not texts:
@@ -87,17 +83,15 @@ class LocalEmbeddingClient:
             convert_to_numpy=True,
             normalize_embeddings=False,
         )
-        # (N, dim) float32
         if arr.ndim == 1:
             all_embeddings = [arr.astype(float).tolist()]
         else:
             all_embeddings = [row.astype(float).tolist() for row in arr]
 
         response_time = time.time() - start_time
-        usage = {"prompt_tokens": 0, "total_tokens": 0}
         return EmbeddingResponse(
             embeddings=all_embeddings,
-            usage=usage,
+            usage={"prompt_tokens": 0, "total_tokens": 0},
             model=self.model,
             response_time=response_time,
         )
@@ -131,38 +125,3 @@ class LocalEmbeddingClient:
             dot_products, norms, out=np.zeros_like(dot_products), where=norms != 0
         )
         return similarities.tolist()
-
-    def normalize_vector(self, vector: List[float]) -> List[float]:
-        v = np.array(vector)
-        norm = np.linalg.norm(v)
-        if norm == 0:
-            return vector
-        return (v / norm).tolist()
-
-    def vector_distance(
-        self, vector1: List[float], vector2: List[float], metric: str = "cosine"
-    ) -> float:
-        if len(vector1) != len(vector2):
-            raise ValueError("Vector dimensions do not match")
-        v1 = np.array(vector1)
-        v2 = np.array(vector2)
-        if metric == "cosine":
-            return 1 - self.cosine_similarity(vector1, vector2)
-        if metric == "euclidean":
-            return float(np.linalg.norm(v1 - v2))
-        if metric == "manhattan":
-            return float(np.sum(np.abs(v1 - v2)))
-        raise ValueError(f"Unsupported distance metric: {metric}")
-
-    def count_tokens(self, text: str) -> int:
-        chinese_chars = sum(1 for char in text if "\u4e00" <= char <= "\u9fff")
-        english_chars = len(text) - chinese_chars
-        return int(chinese_chars / 1.5 + english_chars / 4)
-
-    def get_model_info(self) -> Dict[str, Any]:
-        return {
-            "model": self.model,
-            "embedding_dim": self.embedding_dim,
-            "backend": "local_sentence_transformers",
-            "batch_size": self.batch_size,
-        }

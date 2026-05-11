@@ -17,8 +17,8 @@ if str(SUBMIT_ROOT) not in sys.path:
 if str(LONGMEMEVAL_DIR) not in sys.path:
     sys.path.insert(0, str(LONGMEMEVAL_DIR))
 
-from shared.utils.local_embedding_client import LocalEmbeddingClient
-from shared.models.structured_memory_v2 import StructuredMemoryV2
+from models import DimensionMemory
+from utils.local_embedding_client import LocalEmbeddingClient
 
 from search import search_bm25, search_embedding, search_fused, search_structured, search_top15_content_dedup
 
@@ -58,8 +58,8 @@ def load_parsed_query(parsed_path: Path) -> Dict[str, Any]:
     return json.loads(parsed_path.read_text(encoding="utf-8"))
 
 
-def load_records(memory_dir: Path) -> List[StructuredMemoryV2]:
-    records: List[StructuredMemoryV2] = []
+def load_records(memory_dir: Path) -> List[Dict[str, Any]]:
+    records: List[Dict[str, Any]] = []
     all_memories_path = memory_dir / "all_memories.json"
     if all_memories_path.exists():
         payload = json.loads(all_memories_path.read_text(encoding="utf-8"))
@@ -75,28 +75,27 @@ def load_records(memory_dir: Path) -> List[StructuredMemoryV2]:
             if not isinstance(row, dict):
                 continue
             window_name = _clean(row.get("window_dir")) or _clean(row.get("window_index")) or source_name
-            dimension = row.get("dimension") if isinstance(row.get("dimension"), dict) else {}
-            keywords = _string_list(dimension.get("keywords"))
-            record = StructuredMemoryV2(
-                user_id=memory_dir.name,
-                memory_type=_clean(dimension.get("memory_type")) or "other",
-                content=_clean(row.get("content")),
-                dimension={
-                    "time": _clean(dimension.get("time")),
-                    "location": _clean(dimension.get("location")),
-                    "reason": _clean(dimension.get("reason")),
-                    "purpose": _clean(dimension.get("purpose")),
-                    "keywords": keywords,
-                },
-                entities=keywords,
-                embedding_text=_clean(row.get("content")),
-                source_message_ids=[window_name],
-                source_boundary_id=f"{window_name}_{idx:04d}",
-                source_time=datetime.fromisoformat(_clean(row.get("source_time")))
-                if _clean(row.get("source_time"))
-                else None,
-            )
-            record.record_time = datetime.now()
+            dimension_model = DimensionMemory.from_dict(row.get("dimension"))
+            keywords = dimension_model.keywords
+            source_time_str = _clean(row.get("source_time"))
+            source_time = None
+            if source_time_str:
+                try:
+                    source_time = datetime.fromisoformat(source_time_str)
+                except ValueError:
+                    pass
+            record = {
+                "user_id": memory_dir.name,
+                "memory_type": dimension_model.memory_type or "other",
+                "content": _clean(row.get("content")),
+                "dimension": dimension_model.to_dict(include_memory_type=False),
+                "entities": keywords,
+                "embedding_text": _clean(row.get("content")),
+                "source_message_ids": [window_name],
+                "source_boundary_id": f"{window_name}_{idx:04d}",
+                "source_time": source_time,
+                "record_time": datetime.now().isoformat(),
+            }
             records.append(record)
     return records
 
@@ -176,11 +175,11 @@ def run_retrieval(
         encoding="utf-8",
     )
     (run_dir / "all_ranked_records.json").write_text(
-        json.dumps(ranked, ensure_ascii=False, indent=2),
+        json.dumps(ranked, ensure_ascii=False, indent=2, default=str),
         encoding="utf-8",
     )
     (run_dir / "top_records.json").write_text(
-        json.dumps(top_records, ensure_ascii=False, indent=2),
+        json.dumps(top_records, ensure_ascii=False, indent=2, default=str),
         encoding="utf-8",
     )
 
@@ -207,7 +206,7 @@ def run_retrieval(
         ],
     }
     (run_dir / "summary.json").write_text(
-        json.dumps(summary, ensure_ascii=False, indent=2),
+        json.dumps(summary, ensure_ascii=False, indent=2, default=str),
         encoding="utf-8",
     )
     return run_dir

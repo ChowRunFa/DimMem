@@ -265,9 +265,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-root",
         type=Path,
-        default=Path(
-            "/mnt/workspace/zhiyue-L3-TerminalPerceptiveMemory/workspace/qwt/projects/DimMem/evaluation/dimmem/longmemeval/debug_query_memory/memory_results/segment_results/compressed"
-        ),
+        default=Path("./results/segments/compressed"),
     )
     parser.add_argument("--run-name", default="", help="Optional output run folder name")
     parser.add_argument("--model-name", default=DEFAULT_MODEL)

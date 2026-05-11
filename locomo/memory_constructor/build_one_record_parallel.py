@@ -21,6 +21,7 @@ if str(LOCOMO_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(LOCOMO_SRC_ROOT))
 
 from prompts.prompts import LOCOMO_STRUCTURED_MEMORY_EXTRACTION_PROMPT, OverlappingContextRules
+from models import DimensionMemory
 
 
 def _clean(v: Any) -> str:
@@ -134,28 +135,13 @@ def _normalize_memory_entry(row: Any, source_time_map: Dict[int, str]) -> Dict[s
         source_id = int(source_id_raw)
     except Exception:
         source_id = None
-    dim = row.get("dimension") if isinstance(row.get("dimension"), dict) else {}
-    memory_type = _clean(dim.get("memory_type")).lower()
-    if memory_type not in {"fact", "episodic", "profile"}:
-        memory_type = ""
-    keywords: List[str] = []
-    for kw in list(dim.get("keywords") or []):
-        s = _clean(kw)
-        if s and s not in keywords:
-            keywords.append(s)
+
     normalized = {
         "source_id": source_id if source_id is not None else source_id_raw,
         "source_speaker": _clean(row.get("source_speaker")),
         "source_time": source_time_map.get(source_id or -1, ""),
         "content": _clean(row.get("content")),
-        "dimension": {
-            "memory_type": memory_type,
-            "time": _clean(dim.get("time")),
-            "location": _clean(dim.get("location")),
-            "reason": _clean(dim.get("reason")),
-            "purpose": _clean(dim.get("purpose")),
-            "keywords": keywords,
-        },
+        "dimension": DimensionMemory.from_dict(row.get("dimension")).to_dict(),
     }
     if not normalized["content"]:
         return None

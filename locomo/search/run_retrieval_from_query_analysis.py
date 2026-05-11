@@ -4,14 +4,22 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 
-DEFAULT_QUERY_ROOT = Path("/data/qwt/projects/HiDimMem/locomo_results/query_analysis")
-DEFAULT_MEMORY_ROOT = Path("/data/qwt/projects/HiDimMem/locomo_results/memory_results")
-DEFAULT_OUTPUT_BASE = Path("/data/qwt/projects/HiDimMem/locomo_results/retrieval_results")
+DEFAULT_QUERY_ROOT = Path("./results/locomo_query_analysis")
+DEFAULT_MEMORY_ROOT = Path("./results/locomo_memory")
+DEFAULT_OUTPUT_BASE = Path("./results/locomo_retrieval")
+
+THIS_FILE = Path(__file__).resolve()
+LOCOMO_SRC_ROOT = THIS_FILE.parents[1]
+if str(LOCOMO_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(LOCOMO_SRC_ROOT))
+
+from models import DimensionMemory, ParsedQuery
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 
@@ -38,17 +46,17 @@ def _write_json(path: Path, payload: Any) -> None:
 
 
 def _memory_text(row: Dict[str, Any]) -> str:
-    dim = row.get("dimension") if isinstance(row.get("dimension"), dict) else {}
+    dimension = DimensionMemory.from_dict(row.get("dimension"))
     parts = [
         _clean(row.get("content")),
         _clean(row.get("source_time")),
-        _clean(dim.get("time")),
-        _clean(dim.get("location")),
-        _clean(dim.get("reason")),
-        _clean(dim.get("purpose")),
-        " ".join([_clean(x) for x in (dim.get("keywords") or []) if _clean(x)]),
+        dimension.time,
+        dimension.location,
+        dimension.reason,
+        dimension.purpose,
+        " ".join(dimension.keywords),
     ]
-    return " | ".join([p for p in parts if p])
+    return " | ".join([part for part in parts if part])
 
 
 def _time_score(query_time: str, mem: Dict[str, Any]) -> float:
@@ -101,19 +109,14 @@ def _anchor_overlap_score(anchor: str, mem: Dict[str, Any]) -> float:
 
 
 def _score_memory(parsed: Dict[str, Any], mem: Dict[str, Any]) -> Dict[str, Any]:
-    dim = parsed.get("dimension") if isinstance(parsed.get("dimension"), dict) else {}
-    keywords = dim.get("keywords") if isinstance(dim.get("keywords"), list) else []
-    target_types = dim.get("target_memory_type") if isinstance(dim.get("target_memory_type"), list) else []
-    query_time = _clean(dim.get("time"))
-    query_location = _clean(dim.get("location"))
-    anchor = _clean(parsed.get("query_anchor"))
+    query = ParsedQuery.from_dict(parsed)
 
-    s_memory_type = _memory_type_score(target_types, mem)
-    s_time = _time_score(query_time, mem)
-    s_location = _location_score(query_location, mem)
-    s_kw_phrase = _keyword_phrase_score(keywords, mem)
-    s_kw_tok = _keyword_token_overlap_score(keywords, mem)
-    s_anchor = _anchor_overlap_score(anchor, mem)
+    s_memory_type = _memory_type_score(query.target_memory_type, mem)
+    s_time = _time_score(query.time, mem)
+    s_location = _location_score(query.location, mem)
+    s_kw_phrase = _keyword_phrase_score(query.keywords, mem)
+    s_kw_tok = _keyword_token_overlap_score(query.keywords, mem)
+    s_anchor = _anchor_overlap_score(query.query_anchor, mem)
 
     score = (
         0.15 * s_memory_type

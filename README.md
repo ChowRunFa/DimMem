@@ -43,16 +43,14 @@ Raw Conversations
 ## Directory Structure
 
 ```
-submit/
-├── shared/                # Shared data models & utilities
-│   ├── models/            # StructuredMemoryV2, QueryAnalysisV2
-│   └── utils/             # EmbeddingClient, LocalEmbeddingClient
-│
-├── data/                  # Benchmark datasets (raw)
-│   ├── longmemeval_s_cleaned.json           # LongMemEval: 500 items with question_type field
-│   └── locomo10.json                        # LoCoMo: 10 conversations with qa + conversation
+DimMem/
+├── data/                  # Benchmark datasets (raw, not included)
+│   ├── README.md                              # How to obtain the datasets
+│   ├── longmemeval_s_cleaned.json             # LongMemEval: 500 items with question_type field
+│   └── locomo10.json                          # LoCoMo: 10 conversations with qa + conversation
 │
 ├── longmemeval/           # LongMemEval benchmark pipeline
+│   ├── utils/             # LocalEmbeddingClient (sentence-transformers)
 │   ├── segmenter/         # Step 1: Windowed segmentation
 │   ├── compressor/        # Step 2: LLMLingua-2 compression
 │   ├── prompts/           # Prompt templates (extraction, QA, judge, query)
@@ -72,11 +70,31 @@ submit/
 │   ├── search/            # Step 5: Retrieval (BM25, MiniLM, structured)
 │   ├── qa/                # Step 6: QA generation
 │   ├── judge/             # Step 7: Judge
-│   ├── update/            # Memory update
-│   └── data_generation/   # SFT training data generation scripts
+│   └── update/            # Memory update
 │
 ├── requirements.txt
 └── README.md
+```
+
+## Results Output
+
+All intermediate and final results are saved under `./results/` (auto-created). Example structure after a full run:
+
+```
+results/
+├── segments/              # LongMemEval segmented windows
+├── compressed/            # (Optional) compressed segments
+├── memories/              # Extracted structured memories
+├── query_analysis/        # Parsed queries
+├── retrieval/             # Multi-route retrieval results
+├── qa_judge/              # QA answers + judge verdicts + report.md
+│
+├── locomo_segments/       # LoCoMo segmented windows
+├── locomo_memory/         # LoCoMo extracted memories
+├── locomo_query_analysis/ # LoCoMo parsed queries
+├── locomo_retrieval/      # LoCoMo retrieval (bm25/minilm/structured)
+├── locomo_qa/             # LoCoMo QA answers
+└── locomo_judge/          # LoCoMo judge verdicts + report.md
 ```
 
 ## Requirements

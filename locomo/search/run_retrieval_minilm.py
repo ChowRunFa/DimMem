@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -12,15 +13,16 @@ import torch
 from sentence_transformers import SentenceTransformer
 
 
-DEFAULT_QUERY_ROOT = Path(
-    "/mnt/workspace/zhiyue-L3-TerminalPerceptiveMemory/workspace/qwt/projects/DimMem/evaluation/dimmem/locomo/results/query_analysis/20260427_011047"
-)
-DEFAULT_MEMORY_ROOT = Path(
-    "/mnt/workspace/zhiyue-L3-TerminalPerceptiveMemory/workspace/qwt/projects/DimMem/evaluation/dimmem/locomo/results/memory_results/20260427_110822"
-)
-DEFAULT_OUTPUT_BASE = Path(
-    "/mnt/workspace/zhiyue-L3-TerminalPerceptiveMemory/workspace/qwt/projects/DimMem/evaluation/dimmem/locomo/results/retrieval_results"
-)
+THIS_FILE = Path(__file__).resolve()
+LOCOMO_SRC_ROOT = THIS_FILE.parents[1]
+if str(LOCOMO_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(LOCOMO_SRC_ROOT))
+
+from models import DimensionMemory, ParsedQuery
+
+DEFAULT_QUERY_ROOT = Path("./results/locomo_query_analysis")
+DEFAULT_MEMORY_ROOT = Path("./results/locomo_memory")
+DEFAULT_OUTPUT_BASE = Path("./results/locomo_retrieval")
 DEFAULT_EMBEDDING_MODEL = "/data/aios-weights/embeddings/all-MiniLM-L6-v2"
 
 
@@ -38,17 +40,17 @@ def _write_json(path: Path, payload: Any) -> None:
 
 
 def _memory_text(row: Dict[str, Any]) -> str:
-    dim = row.get("dimension") if isinstance(row.get("dimension"), dict) else {}
+    dimension = DimensionMemory.from_dict(row.get("dimension"))
     parts = [
         _clean(row.get("content")),
-        _clean(dim.get("reason")),
-        _clean(dim.get("purpose")),
+        dimension.reason,
+        dimension.purpose,
     ]
-    return " | ".join([p for p in parts if p])
+    return " | ".join([part for part in parts if part])
 
 
 def _query_text(parsed: Dict[str, Any]) -> str:
-    return _clean(parsed.get("query_anchor"))
+    return ParsedQuery.from_dict(parsed).query_anchor
 
 
 def _find_memory_file(memory_root: Path, conv_name: str) -> Path | None:

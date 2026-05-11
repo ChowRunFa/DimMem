@@ -5,20 +5,22 @@ import argparse
 import json
 import math
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 
-DEFAULT_QUERY_ROOT = Path(
-    "/mnt/workspace/zhiyue-L3-TerminalPerceptiveMemory/workspace/qwt/projects/DimMem/evaluation/dimmem/locomo/results/query_analysis/20260427_011047"
-)
-DEFAULT_MEMORY_ROOT = Path(
-    "/mnt/workspace/zhiyue-L3-TerminalPerceptiveMemory/workspace/qwt/projects/DimMem/evaluation/dimmem/locomo/results/memory_results/20260427_110822"
-)
-DEFAULT_OUTPUT_BASE = Path(
-    "/mnt/workspace/zhiyue-L3-TerminalPerceptiveMemory/workspace/qwt/projects/DimMem/evaluation/dimmem/locomo/results/retrieval_results"
-)
+DEFAULT_QUERY_ROOT = Path("./results/locomo_query_analysis")
+DEFAULT_MEMORY_ROOT = Path("./results/locomo_memory")
+DEFAULT_OUTPUT_BASE = Path("./results/locomo_retrieval")
+
+THIS_FILE = Path(__file__).resolve()
+LOCOMO_SRC_ROOT = THIS_FILE.parents[1]
+if str(LOCOMO_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(LOCOMO_SRC_ROOT))
+
+from models import DimensionMemory, ParsedQuery
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 
@@ -41,21 +43,11 @@ def _tokens(text: str) -> List[str]:
 
 
 def _memory_text(row: Dict[str, Any]) -> str:
-    dim = row.get("dimension") if isinstance(row.get("dimension"), dict) else {}
-    parts = [
-        _clean(row.get("content")),
-        _clean(dim.get("reason")),
-        _clean(dim.get("purpose")),
-        " ".join([_clean(x) for x in (dim.get("keywords") or []) if _clean(x)]),
-    ]
-    return " | ".join([p for p in parts if p])
+    return DimensionMemory.from_dict(row.get("dimension")).searchable_text(include_content=_clean(row.get("content")))
 
 
 def _build_query_tokens(parsed: Dict[str, Any]) -> List[str]:
-    dim = parsed.get("dimension") if isinstance(parsed.get("dimension"), dict) else {}
-    kws = dim.get("keywords") if isinstance(dim.get("keywords"), list) else []
-    text = " ".join([_clean(parsed.get("query_anchor"))] + [_clean(x) for x in kws if _clean(x)])
-    toks = _tokens(text)
+    toks = _tokens(ParsedQuery.from_dict(parsed).bm25_text())
     # BM25 query term set to reduce repeated term overweight from anchor wording
     uniq = []
     seen = set()
