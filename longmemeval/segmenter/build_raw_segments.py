@@ -196,8 +196,8 @@ def _build_windows(messages: List[UserMsg], *, window_size: int, overlap: int) -
         chunk = rows[start : start + window_size]
         if not chunk:
             break
-        if len(chunk) < window_size and start != 0:
-            break
+        # Keep the last window even if it's shorter than window_size
+        pass
         overlap_count = 0 if len(windows) == 0 else min(overlap, len(chunk))
         window = {
             "window_index": len(windows),

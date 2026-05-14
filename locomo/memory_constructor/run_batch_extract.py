@@ -69,11 +69,14 @@ def _extract_message(resp_json: Dict[str, Any]) -> str:
         return ""
 
 
-def _build_prompt(conversation: str, *, overlapping_rules: str) -> str:
+def _build_prompt(conversation: str, *, overlapping_rules: str, overlap_count: int = 0) -> str:
     prompt = LOCOMO_STRUCTURED_MEMORY_EXTRACTION_PROMPT
+    # Replace overlap count placeholders in the overlapping rules
+    rules = overlapping_rules.replace("{overlap_count}", str(overlap_count))
+    rules = rules.replace("{extract_start_index}", str(overlap_count + 1))
     # Compatible with both "{name}" and "{{name}}" placeholder styles.
-    prompt = prompt.replace("{OverlappingContextRules}", overlapping_rules)
-    prompt = prompt.replace("{{OverlappingContextRules}}", overlapping_rules)
+    prompt = prompt.replace("{OverlappingContextRules}", rules)
+    prompt = prompt.replace("{{OverlappingContextRules}}", rules)
     prompt = prompt.replace("{conversation}", conversation)
     prompt = prompt.replace("{{conversation}}", conversation)
     return prompt.strip()
@@ -138,7 +141,12 @@ def _normalize_memory_entry(row: Any, *, source_time_map: Dict[int, str]) -> Dic
 
 
 def _iter_record_dirs(compressed_root: Path) -> List[Path]:
-    return [p.parent for p in sorted(compressed_root.glob("*/*/summary.json"))]
+    # Support both one-level (LoCoMo) and two-level (LongMemEval) directory structures
+    two_level = [p.parent for p in sorted(compressed_root.glob("*/*/summary.json"))]
+    one_level = [p.parent for p in sorted(compressed_root.glob("*/summary.json"))]
+    # Deduplicate and sort
+    all_dirs = sorted(set(two_level + one_level))
+    return all_dirs
 
 
 def _window_paths(record_dir: Path) -> List[Path]:
@@ -147,11 +155,7 @@ def _window_paths(record_dir: Path) -> List[Path]:
 
 def _output_rel(record_dir: Path, compressed_root: Path) -> Path:
     rel = record_dir.relative_to(compressed_root)
-    # Flatten output by conv name only:
-    # compressed: <conv>/<record>/...
-    # output:     <conv>/...
-    if len(rel.parts) >= 1:
-        return Path(rel.parts[0])
+    # Keep the full relative path structure
     return rel
 
 
@@ -166,7 +170,7 @@ def _process_record(
     max_tokens: int,
     timeout: int,
     max_retries: int,
-    empty_overlap_for_first_window: bool,
+    overlap: int,
 ) -> Dict[str, Any]:
     rel = _output_rel(record_dir, compressed_root)
     out_record_dir = output_root / rel
@@ -198,10 +202,9 @@ def _process_record(
 
         conversation = _clean(window.get("text"))
         source_time_map = _source_time_by_id_from_dialogue(conversation)
-        overlap_rules = ""
-        if not (empty_overlap_for_first_window and window_idx == 0):
-            overlap_rules = OverlappingContextRules
-        prompt = _build_prompt(conversation, overlapping_rules=overlap_rules)
+        overlap_count = overlap if window_idx > 0 else 0
+        overlap_rules = OverlappingContextRules if window_idx > 0 else ""
+        prompt = _build_prompt(conversation, overlapping_rules=overlap_rules, overlap_count=overlap_count)
 
         _write_json(win_dir / "window_input.json", window)
         _write_text(win_dir / "dialogue_input.txt", conversation)
@@ -258,7 +261,7 @@ def _process_record(
             "attempt_count": attempt,
             "memory_count": len(memories),
             "elapsed_seconds": time.time() - started,
-            "overlapping_rules_empty": bool(window_idx == 0 and empty_overlap_for_first_window),
+            "overlapping_rules_empty": bool(window_idx == 0),
             "usage": (response_json or {}).get("usage"),
         }
         _write_json(win_dir / "result.json", result)
@@ -366,7 +369,7 @@ def run(args: argparse.Namespace) -> Path:
                 max_tokens=args.max_tokens,
                 timeout=args.timeout,
                 max_retries=args.max_retries,
-                empty_overlap_for_first_window=args.empty_overlap_for_first_window,
+                overlap=args.overlap,
             )
             done += 1
         except Exception as exc:
@@ -400,7 +403,7 @@ def run(args: argparse.Namespace) -> Path:
             "prompt_file": str(Path(__file__).resolve().parents[1] / "prompts" / "prompts.py"),
             "prompt_constant": "LOCOMO_STRUCTURED_MEMORY_EXTRACTION_PROMPT",
             "overlapping_rules_source": "OverlappingContextRules",
-            "empty_overlap_for_first_window": bool(args.empty_overlap_for_first_window),
+            "overlap": args.overlap,
             "base_url": args.base_url,
             "model_name": args.model_name,
             "max_tokens": args.max_tokens,
@@ -448,6 +451,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=Path("./results/locomo_memory"),
     )
     parser.add_argument("--run-name", default="")
+    parser.add_argument("--overlap", type=int, default=5, help="Number of overlapping messages between windows")
     parser.add_argument("--base-url", default="http://127.0.0.1:7790/v1")
     parser.add_argument("--api-key", default="EMPTY")
     parser.add_argument("--model-name", default="qwen3-30b-a3b")
@@ -455,7 +459,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--max-retries", type=int, default=5)
     parser.add_argument("--max-records", type=int, default=0)
-    parser.add_argument("--empty-overlap-for-first-window", action="store_true", default=True)
     parser.add_argument("--no-resume", action="store_false", dest="resume")
     parser.set_defaults(resume=True)
     return parser

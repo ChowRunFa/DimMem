@@ -52,8 +52,12 @@ def _safe_json_fragment(text: str) -> Any:
     raise ValueError("unable to parse JSON")
 
 
-def _build_prompt(question: str) -> str:
-    return QUERY_PROMPT_TEMPLATE.replace("{{question}}", str(question or "").strip())
+def _build_prompt(question: str, question_date: str = "") -> str:
+    return (
+        QUERY_PROMPT_TEMPLATE
+        .replace("{question_date}", str(question_date or "").strip())
+        .replace("{question}", str(question or "").strip())
+    )
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -223,7 +227,8 @@ def run(args: argparse.Namespace) -> Path:
                 except Exception:
                     pass
 
-            prompt = _build_prompt(q)
+            question_date = str(item.get("raw", {}).get("question_date") or "").strip()
+            prompt = _build_prompt(q, question_date=question_date)
             _write_json(out_dir / "input.json", item["raw"])
             (out_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
 

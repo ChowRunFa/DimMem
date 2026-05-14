@@ -68,10 +68,13 @@ def _extract_message(resp_json: Dict[str, Any]) -> str:
         return ""
 
 
-def _build_prompt(conversation: str, overlapping_rules: str) -> str:
-    prompt = LOCOMO_STRUCTURED_MEMORY_EXTRACTION_PROMPT
-    prompt = prompt.replace("{OverlappingContextRules}", overlapping_rules)
-    prompt = prompt.replace("{{OverlappingContextRules}}", overlapping_rules)
+def _build_prompt(conversation: str, overlapping_rules: str, overlap_count: int = 0, prompt_template: str = None) -> str:
+    prompt = prompt_template if prompt_template else LOCOMO_STRUCTURED_MEMORY_EXTRACTION_PROMPT
+    # Replace overlap count placeholders in the overlapping rules
+    rules = overlapping_rules.replace("{overlap_count}", str(overlap_count))
+    rules = rules.replace("{extract_start_index}", str(overlap_count + 1))
+    prompt = prompt.replace("{OverlappingContextRules}", rules)
+    prompt = prompt.replace("{{OverlappingContextRules}}", rules)
     prompt = prompt.replace("{conversation}", conversation)
     prompt = prompt.replace("{{conversation}}", conversation)
     return prompt.strip()
@@ -152,6 +155,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Parallel memory extraction for one LoCoMo record.")
     parser.add_argument("--record-dir", type=Path, required=True)
     parser.add_argument("--output-record-dir", type=Path, required=True)
+    parser.add_argument("--overlap", type=int, default=5, help="Number of overlapping messages between windows")
     parser.add_argument("--ports", default="7790,7791,7792,7793")
     parser.add_argument(
         "--base-urls",
@@ -209,17 +213,11 @@ def main() -> None:
             base_url = f"http://127.0.0.1:{ports[i % len(ports)]}/v1"
         win = _load_json(window_path)
         window_idx = int(win.get("window_index", i))
+        overlap_count = args.overlap if window_idx > 0 else 0
         conversation = _clean(win.get("text"))
         source_time_map = _source_time_by_id_from_dialogue(conversation)
         overlap = "" if window_idx == 0 else overlap_rules_template
-        # Use the selected prompt template while keeping existing placeholder replacement logic.
-        global LOCOMO_STRUCTURED_MEMORY_EXTRACTION_PROMPT
-        _orig = LOCOMO_STRUCTURED_MEMORY_EXTRACTION_PROMPT
-        LOCOMO_STRUCTURED_MEMORY_EXTRACTION_PROMPT = prompt_template
-        try:
-            prompt = _build_prompt(conversation, overlap)
-        finally:
-            LOCOMO_STRUCTURED_MEMORY_EXTRACTION_PROMPT = _orig
+        prompt = _build_prompt(conversation, overlap, overlap_count=overlap_count, prompt_template=prompt_template)
 
         out_dir = args.output_record_dir / f"window_{window_idx:04d}"
         out_dir.mkdir(parents=True, exist_ok=True)

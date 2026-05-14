@@ -27,11 +27,14 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import requests
+import httpx
+from openai import OpenAI
 
 # ---------------------------------------------------------------------------
 # Setup: add project roots to sys.path so we can import shared modules
 # ---------------------------------------------------------------------------
 SUBMIT_ROOT = Path(__file__).resolve().parents[1]
+RESULTS_ROOT = SUBMIT_ROOT / "results"
 LONGMEMEVAL_ROOT = SUBMIT_ROOT / "longmemeval"
 LOCOMO_ROOT = SUBMIT_ROOT / "locomo"
 
@@ -114,24 +117,22 @@ def _safe_json_fragment(text: str) -> Any:
     raise ValueError("unable to parse JSON from LLM response")
 
 
+def _build_client(*, base_url: str, api_key: str) -> OpenAI:
+    limits = httpx.Limits(max_connections=8, max_keepalive_connections=4, keepalive_expiry=30.0)
+    http_client = httpx.Client(limits=limits, timeout=httpx.Timeout(120.0, connect=10.0))
+    return OpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
+
+
 def _call_chat(*, base_url: str, api_key: str, model_name: str,
                prompt: str, max_tokens: int) -> Dict[str, Any]:
-    url = base_url.rstrip("/") + "/chat/completions"
-    payload = {
-        "model": model_name,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.0,
-        "max_tokens": max_tokens,
-    }
-    resp = requests.post(
-        url,
-        headers={"Authorization": f"Bearer {api_key}",
-                 "Content-Type": "application/json"},
-        json=payload,
-        timeout=300,
+    client = _build_client(base_url=base_url, api_key=api_key)
+    resp = client.chat.completions.create(
+        model=model_name,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.0,
+        max_tokens=max_tokens,
     )
-    resp.raise_for_status()
-    return resp.json()
+    return resp.model_dump()
 
 
 def _extract_text(response_json: Dict[str, Any]) -> str:
@@ -189,7 +190,7 @@ def _print_memories(memories: List[Dict[str, Any]]) -> None:
 # =========================================================================
 
 def demo_longmemeval(*, base_url: str, api_key: str, model_name: str,
-                     max_tokens: int) -> None:
+                     max_tokens: int, output_dir: Path) -> None:
     print("=" * 70)
     print("Demo: LongMemEval Dimension Memory Extraction")
     print("=" * 70)
@@ -198,7 +199,7 @@ def demo_longmemeval(*, base_url: str, api_key: str, model_name: str,
     print("\n[Input conversation window]\n")
     print(conversation)
 
-    # Build prompt (same logic as memory_constructor/run_extract_windows_with_en_prompt.py)
+    # Build prompt (same logic as memory_constructor/extract_helpers.py)
     prompt = LONGMEMEVAL_EXTRACTION_PROMPT.replace(
         "{conversation}", conversation
     )
@@ -225,7 +226,10 @@ def demo_longmemeval(*, base_url: str, api_key: str, model_name: str,
     _print_memories(memories)
 
     print("\n[Raw JSON output]")
-    print(json.dumps({"memories": memories}, ensure_ascii=False, indent=2))
+    payload = {"memories": memories}
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "result.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 # =========================================================================
@@ -233,7 +237,7 @@ def demo_longmemeval(*, base_url: str, api_key: str, model_name: str,
 # =========================================================================
 
 def demo_locomo(*, base_url: str, api_key: str, model_name: str,
-                max_tokens: int) -> None:
+                max_tokens: int, output_dir: Path) -> None:
     print("=" * 70)
     print("Demo: LoCoMo Dimension Memory Extraction")
     print("=" * 70)
@@ -242,7 +246,7 @@ def demo_locomo(*, base_url: str, api_key: str, model_name: str,
     print("\n[Input conversation window]\n")
     print(conversation)
 
-    # Build prompt (same logic as locomo/memory_constructor/build_one_record_parallel.py)
+    # Build prompt (same logic as locomo/memory_constructor/extract_single_record.py)
     # Window index 0 -> no overlapping rules
     prompt = LOCOMO_EXTRACTION_PROMPT
     prompt = prompt.replace("{OverlappingContextRules}", "")
@@ -270,7 +274,10 @@ def demo_locomo(*, base_url: str, api_key: str, model_name: str,
     _print_memories(memories)
 
     print("\n[Raw JSON output]")
-    print(json.dumps({"memories": memories}, ensure_ascii=False, indent=2))
+    payload = {"memories": memories}
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "result.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 # =========================================================================
@@ -299,12 +306,12 @@ def main() -> None:
     )
 
     if args.demo in ("longmemeval", "both"):
-        demo_longmemeval(**kwargs)
+        demo_longmemeval(output_dir=RESULTS_ROOT / "longmemeval" / "sample0", **kwargs)
         if args.demo == "both":
             print("\n")
 
     if args.demo in ("locomo", "both"):
-        demo_locomo(**kwargs)
+        demo_locomo(output_dir=RESULTS_ROOT / "locomo" / "sample0", **kwargs)
 
 
 if __name__ == "__main__":

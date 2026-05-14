@@ -245,35 +245,12 @@ OverlappingContextRules = """
 默认不要从前 5 条消息中抽取记忆，除非第 6 条及之后的消息必须依赖它们才能形成完整、自包含的记忆。
 """ 
 
-LONGMEMEVAL_QUERY_ANALYSIS_PROMPT = """
-你是一个结构化记忆查询解析器。
+LOCOMO_QUERY_ANALYSIS_PROMPT = """
+你是记忆查询解析器。将自然语言问题转换为结构化检索 query。只输出合法 JSON。
 
-任务：将自然语言问题转换为用于记忆检索的结构化 query。
-
-该 query 将用于匹配如下 memory 结构：
+== 输出格式 ==
 
 {
-  "memory": {
-    "content": "",
-    "dimension": {
-      "memory_type": "fact | episodic | profile",
-      "time": "",
-      "location": "",
-      "reason": "",
-      "purpose": "",
-      "keywords": []
-    }
-  }
-}
-
-只能输出合法 JSON，不要输出解释、Markdown 或额外文本。
-
-========================
-输出格式
-========================
-
-{
-  "parse_mode": "",
   "query_anchor": "",
   "dimension": {
     "target_memory_type": [],
@@ -284,174 +261,45 @@ LONGMEMEVAL_QUERY_ANALYSIS_PROMPT = """
   "answer_dim": ""
 }
 
-========================
-字段说明
-========================
+== 字段说明 ==
 
-1. parse_mode
+1. query_anchor
+改写原问题为检索友好的自然语言句子。I/me/my -> the user。保留核心意图、时间、地点、数量、顺序等关键信息。不是关键词列表。
+示例 true: "Can you remind me which airline you suggested last time for budget flights?"
+示例 false: "How many countries have I visited this year?"
 
-只能是 structured、hybrid、raw 之一。
+2. dimension.target_memory_type
+优先检索的记忆类型，可多选：
+- fact: 稳定事实、身份、关系、状态、拥有物
+- episodic: 具体事件、经历、行为、购买、旅行、进展
+- profile: 偏好、习惯、兴趣、目标、风格
+不确定时填 []。
 
-structured：
-问题目标清晰，答案可从一条或少量 memory 中直接抽取，并能明确对应 content、time、location、reason、purpose 或 keywords。
-适合事实、事件、时间、地点、原因、目的、人物、物品、名称、画像内容等问答。
+3. dimension.keywords
+提取关键实体、人物、物品、工具、地点、活动、主题等短语。无则填 []。
 
-hybrid：
-问题有明确检索目标，但答案需要多条 memory 聚合、统计、比较、排序、计算或推理后得到。
-适合 how many times、total、average、difference、percentage、more/less than、before/after、earliest/latest、first/last/order、based on 等问题。
+4. dimension.time
+仅当存在明确时间约束时填写。格式："on/before/after/around <时间>" 或 "between <起> and <止>"。
+- 若有 question_date，归一化相对时间（today/yesterday/this week/last month 等 -> 具体日期）
+- 问题在问时间本身时不填此字段，改设 answer_dim = "time"
+- 频率词（daily/weekly/often）不算时间约束
+- 无明确约束时填 ""
 
-raw：
-问题不适合可靠结构化解析，主要依赖 query_anchor 和 keywords 做 BM25 + embedding 宽召回。
-适合推荐、建议、开放规划、模糊回忆、强上下文依赖或无法明确结构化约束的问题。
-如果强行填写结构化字段会引入错误约束，选择 raw。
+5. dimension.location
+仅当存在明确地点/平台/场景约束时填写。问地点本身时不填，改设 answer_dim = "location"。无则填 ""。
 
-2. query_anchor
+6. answer_dim
+答案对应的记忆字段：
+- "content": 事实/事件/画像内容
+- "time": 时间/日期/频率
+- "location": 地点/平台/场景
+- "reason": 原因
+- "purpose": 目的/用途
+- "keywords": 人物/物品/名称/工具等关键对象
+- "": 需计算/比较/排序/推理/推荐/汇总
 
-从原始问题改写得到的自然语言检索 query，不是关键词列表。
+== 输入 ==
 
-要求：
-- 保留原问题核心意图；
-- 保留原问题中的人物名称、对象、事件和关键上下文；
-- 不要改变具体主体名称；
-- 可以适度补全省略信息，使 query 更适合检索；
-- 保留重要的时间、地点、比较、数量、顺序信息。
-
-示例：
-
-Why did Sophie visit the design studio?->What was Sophie's purpose for visiting the design studio?
-
-What recipe did Nathan try after the cooking workshop?->What recipe did Nathan try after attending the cooking workshop?
-
-Which museum would Clara likely enjoy visiting based on her interest in modern sculpture?->Which museum would Clara likely enjoy visiting based on Clara's interest in modern sculpture?
-
-3. dimension.target_memory_type
-
-表示优先检索的 memory 类型，可多选；如果不明确或主要使用 raw 检索，填 []。
-
-允许值：
-- fact：稳定事实、身份、背景、关系、当前状态、工具、模型、数据集、配置、拥有物、稳定属性。
-- episodic：具体事件、经历、行为、购买、旅行、计划、阶段进展、时间线相关记忆。
-- profile：偏好、习惯、兴趣、价值观、长期目标、能力特征、风格偏好、稳定行为模式。
-
-4. dimension.keywords
-
-表示问题中的关键检索词或短语，用于召回、去重和 query-memory 对齐。
-
-提取重点：
-- fact：人物、对象、工具、模型、数据集、项目、关系对象、稳定属性；
-- episodic：事件、参与者、地点、活动、关键对象、结果、具体行为；
-- profile：偏好对象、习惯活动、兴趣领域、价值观对象、长期目标对象。
-
-规则：
-- 使用简短词语或名词短语；
-- 保留重要人物名；
-- 可包含重要实体、主题词、行为词或对象词；
-- 不要放完整句子；
-- 不要重复；
-- 不要提取无检索价值的普通词；
-- 没有明确关键词时填 []；
-- 即使 parse_mode 为 raw，也应尽量提取 keywords。
-
-5. dimension.time
-
-表示问题中的时间约束，用于匹配 memory.dimension.time。
-
-只有当问题本身包含明确时间约束时才填写。
-
-允许格式只能是：
-- "on <具体时间>"
-- "before <具体时间>"
-- "after <具体时间>"
-- "around <具体时间>"
-- "between <开始时间> and <结束时间>"
-- ""
-
-时间表达应尽量可比较，例如：
-- "2023-05-08"
-- "2023-05"
-- "2023"
-- "May 8, 2023"
-- "March"
-
-规则：
-- 如果问题中出现明确日期、月份、年份或可比较时间范围，填入 time；
-- 如果问题是在询问时间，time 不作为约束填写，应设置 answer_dim = "time"；
-- 如果没有 question_date，不要归一化 today、yesterday、this month、last week、currently、now、recently 等相对时间；
-- currently、now、recently 通常表示当前状态或近况，不写入 time；
-- 不要把 every Saturday、usually、often、twice a week、daily、weekly 等频率写入 time；
-- 不要把 latest、earliest、first、previous 单独写入 time，这类通常属于 hybrid；
-- 没有明确时间约束时填 ""。
-
-示例：
-
-When did Olivia start her online language course?
-- time = ""
-- answer_dim = "time"
-
-Which month did Marcus begin training for the marathon?
-- time = ""
-- answer_dim = "time"
-
-What podcast is Hannah currently listening to?
-- time = ""
-- answer_dim = "content"
-
-What did Leo buy in April?
-- time = "on April"
-- answer_dim = "content"
-
-What project did Emma work on before 2022?
-- time = "before 2022"
-- answer_dim = "content"
-
-6. dimension.location
-
-表示问题中的地点、平台、场景或环境约束，用于匹配 memory.dimension.location。
-
-规则：
-- 如果地点、平台或场景是检索条件，填入 location；
-- 如果问题是在询问地点，location 不作为约束填写，应设置 answer_dim = "location"；
-- 不要把普通主题强行写成 location；
-- 没有地点约束时填 ""。
-
-示例：
-
-Where is Aaron's photography studio?
-- location = ""
-- answer_dim = "location"
-
-What restaurant did Mia recommend in Chicago?
-- location = "Chicago"
-- answer_dim = "keywords"
-
-Which bookstore would Rachel enjoy visiting in London City based on her reading interests?
-- location = "London"
-- answer_dim = ""
-
-7. answer_dim
-
-表示答案直接对应的 memory 字段。
-
-允许值只能是：
-- "content"
-- "time"
-- "location"
-- "reason"
-- "purpose"
-- "keywords"
-- ""
-
-填写规则：
-- 问普通事实、事件内容、画像内容：content
-- 问时间、日期、月份、星期、频率、通常时间：time
-- 问地点、平台、场景：location
-- 问原因：reason
-- 问目的、用途、目标：purpose
-- 问人物、物品、组织、名称、对象、平台、作品等关键短语：keywords
-- 如果问题需要统计、求和、计算、比较、排序、yes/no 判断、推荐、推测、汇总或复杂推理，填 ""。
-
-
-以下是要解析的真正问题：
 Question:
-{{question}}
+{question}
 """

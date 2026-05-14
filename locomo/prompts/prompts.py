@@ -233,45 +233,23 @@ The following is the real input you need to process now:
 {{conversation}}
 """
 
+
 OverlappingContextRules = """
 ========================
 5. Overlapping Context Rule
 ========================
 
-The first 5 messages in the input, namely messages numbered 1, 2, 3, 4, and 5, are overlapping context from the previous conversation segment. They are mainly used to understand message 6 and later messages.
+The first {overlap_count} messages in the input, namely messages numbered 1 to {overlap_count}, are overlapping context from the previous conversation segment. They are mainly used to understand message {extract_start_index} and later messages.
 
-By default, do not extract memories from the first 5 messages, unless messages 6 and later must rely on them to form a complete and self-contained memory.
+By default, do not extract memories from the first {overlap_count} messages, unless message {extract_start_index} and later must rely on them to form a complete and self-contained memory.
 """
 
-LONGMEMEVAL_QUERY_ANALYSIS_PROMPT = """
-You are a structured memory query parser.
+LOCOMO_QUERY_ANALYSIS_PROMPT = """
+You are a memory query parser. Convert natural language questions into structured retrieval queries. Output only valid JSON.
 
-Task: Convert a natural language question into a structured query for memory retrieval.
-
-This query will be used to match the following memory structure:
+== Output Format ==
 
 {
-  "memory": {
-    "content": "",
-    "dimension": {
-      "memory_type": "fact | episodic | profile",
-      "time": "",
-      "location": "",
-      "reason": "",
-      "purpose": "",
-      "keywords": []
-    }
-  }
-}
-
-Only output valid JSON. Do not output explanations, Markdown, or any extra text.
-
-========================
-Output Format
-========================
-
-{
-  "parse_mode": "",
   "query_anchor": "",
   "dimension": {
     "target_memory_type": [],
@@ -282,174 +260,45 @@ Output Format
   "answer_dim": ""
 }
 
-========================
-Field Descriptions
-========================
+== Field Descriptions ==
 
-1. parse_mode
+1. query_anchor
+Rewrite the original question into a retrieval-friendly natural language sentence. I/me/my -> the user. Preserve key information such as the core intent, time, location, quantity, and order. This is not a keyword list.
+Example true: "Can you remind me which airline you suggested last time for budget flights?"
+Example false: "How many countries have I visited this year?"
 
-Must be one of: structured, hybrid, raw.
+2. dimension.target_memory_type
+Memory types to prioritize for retrieval; multiple values are allowed:
+- fact: stable facts, identity, relationships, status, possessions
+- episodic: specific events, experiences, actions, purchases, trips, progress
+- profile: preferences, habits, interests, goals, style
+Use [] when uncertain.
 
-structured:
-The question has a clear target. The answer can be directly extracted from one or a small number of memories, and can clearly correspond to content, time, location, reason, purpose, or keywords.
-Suitable for questions about facts, events, time, location, reasons, purposes, people, objects, names, profile content, etc.
+3. dimension.keywords
+Extract phrases for key entities, people, objects, tools, locations, activities, topics, etc. Use [] if none.
 
-hybrid:
-The question has a clear retrieval target, but the answer requires aggregation, counting, comparison, sorting, calculation, or reasoning over multiple memories.
-Suitable for questions involving how many times, total, average, difference, percentage, more/less than, before/after, earliest/latest, first/last/order, based on, etc.
+4. dimension.time
+Fill only when there is an explicit time constraint. Format: "on/before/after/around <time>" or "between <start> and <end>".
+- If question_date is available, normalize relative time expressions (today/yesterday/this week/last month, etc. -> specific dates)
+- If the question asks about the time itself, leave this field empty and set answer_dim = "time"
+- Frequency words (daily/weekly/often) are not time constraints
+- Use "" when there is no explicit constraint
 
-raw:
-The question is not suitable for reliable structured parsing and mainly relies on query_anchor and keywords for broad BM25 + embedding recall.
-Suitable for recommendations, suggestions, open-ended planning, vague recall, strong context dependence, or questions that cannot be clearly constrained structurally.
-If forcibly filling structured fields would introduce incorrect constraints, choose raw.
+5. dimension.location
+Fill only when there is an explicit location/platform/scene constraint. If the question asks about the location itself, leave this field empty and set answer_dim = "location". Use "" if none.
 
-2. query_anchor
+6. answer_dim
+The memory field corresponding to the answer:
+- "content": fact/event/profile content
+- "time": time/date/frequency
+- "location": location/platform/scene
+- "reason": reason
+- "purpose": purpose/usage
+- "keywords": key objects such as people/objects/names/tools
+- "": requires calculation/comparison/ranking/reasoning/recommendation/summarization
 
-A natural language retrieval query rewritten from the original question. It is not a keyword list.
-
-Requirements:
-- Preserve the core intent of the original question.
-- Preserve the person names, objects, events, and key context in the original question.
-- Do not change specific subject names.
-- You may moderately complete omitted information to make the query more suitable for retrieval.
-- Preserve important time, location, comparison, quantity, and order information.
-
-Examples:
-
-Why did Sophie visit the design studio? -> What was Sophie's purpose for visiting the design studio?
-
-What recipe did Nathan try after the cooking workshop? -> What recipe did Nathan try after attending the cooking workshop?
-
-Which museum would Clara likely enjoy visiting based on her interest in modern sculpture? -> Which museum would Clara likely enjoy visiting based on Clara's interest in modern sculpture?
-
-3. dimension.target_memory_type
-
-Indicates the memory types to prioritize for retrieval. Multiple values may be selected. If unclear or if retrieval mainly uses raw mode, use [].
-
-Allowed values:
-- fact: Stable facts, identity, background, relationships, current status, tools, models, datasets, configurations, possessions, or stable attributes.
-- episodic: Specific events, experiences, actions, purchases, trips, plans, phase progress, or timeline-related memories.
-- profile: Preferences, habits, interests, values, long-term goals, ability traits, style preferences, or stable behavioral patterns.
-
-4. dimension.keywords
-
-Key retrieval terms or phrases in the question, used for recall, deduplication, and query-memory alignment.
-
-Extraction focus:
-- fact: People, objects, tools, models, datasets, projects, relationship objects, stable attributes.
-- episodic: Events, participants, locations, activities, key objects, outcomes, specific actions.
-- profile: Preference objects, habitual activities, interest domains, value objects, long-term goal objects.
-
-Rules:
-- Use short words or noun phrases.
-- Preserve important person names.
-- May include important entities, topic words, action words, or object words.
-- Do not include full sentences.
-- Do not duplicate keywords.
-- Do not extract common words with no retrieval value.
-- Use [] when there are no clear keywords.
-- Even when parse_mode is raw, still extract keywords as much as possible.
-
-5. dimension.time
-
-Represents the time constraint in the question, used to match memory.dimension.time.
-
-Fill this field only when the question itself contains an explicit time constraint.
-
-Allowed formats only:
-- "on <specific time>"
-- "before <specific time>"
-- "after <specific time>"
-- "around <specific time>"
-- "between <start time> and <end time>"
-- ""
-
-Time expressions should be as comparable as possible, for example:
-- "2023-05-08"
-- "2023-05"
-- "2023"
-- "May 8, 2023"
-- "March"
-
-Rules:
-- If the question contains an explicit date, month, year, or comparable time range, fill in time.
-- If the question is asking about time, time is not a constraint and answer_dim should be set to "time".
-- If there is no question_date, do not normalize relative time expressions such as today, yesterday, this month, last week, currently, now, recently.
-- currently, now, and recently usually indicate current status or recent status, and should not be written into time.
-- Do not write frequencies such as every Saturday, usually, often, twice a week, daily, weekly into time.
-- Do not write latest, earliest, first, or previous alone into time. These usually belong to hybrid mode.
-- If there is no explicit time constraint, use "".
-
-Examples:
-
-When did Olivia start her online language course?
-- time = ""
-- answer_dim = "time"
-
-Which month did Marcus begin training for the marathon?
-- time = ""
-- answer_dim = "time"
-
-What podcast is Hannah currently listening to?
-- time = ""
-- answer_dim = "content"
-
-What did Leo buy in April?
-- time = "on April"
-- answer_dim = "content"
-
-What project did Emma work on before 2022?
-- time = "before 2022"
-- answer_dim = "content"
-
-6. dimension.location
-
-Represents the location, platform, scenario, or environment constraint in the question, used to match memory.dimension.location.
-
-Rules:
-- If a location, platform, or scenario is a retrieval condition, fill in location.
-- If the question is asking about location, location is not a constraint and answer_dim should be set to "location".
-- Do not force ordinary topics into location.
-- If there is no location constraint, use "".
-
-Examples:
-
-Where is Aaron's photography studio?
-- location = ""
-- answer_dim = "location"
-
-What restaurant did Mia recommend in Chicago?
-- location = "Chicago"
-- answer_dim = "keywords"
-
-Which bookstore would Rachel enjoy visiting in London City based on her reading interests?
-- location = "London"
-- answer_dim = ""
-
-7. answer_dim
-
-Indicates the memory field that the answer directly corresponds to.
-
-Allowed values only:
-- "content"
-- "time"
-- "location"
-- "reason"
-- "purpose"
-- "keywords"
-- ""
-
-Filling rules:
-- For ordinary facts, event content, or profile content: content
-- For time, dates, months, weekdays, frequencies, or usual times: time
-- For locations, platforms, or scenarios: location
-- For reasons: reason
-- For purposes, uses, or goals: purpose
-- For people, objects, organizations, names, targets, platforms, works, or other key phrases: keywords
-- If the question requires counting, summation, calculation, comparison, sorting, yes/no judgment, recommendation, inference, summarization, or complex reasoning, use "".
-
-The following is the actual question to parse:
+== Input ==
 
 Question:
-{{question}}
+{question}
 """

@@ -6,7 +6,8 @@
 
 | 文件 | 作用 |
 |---|---|
-| `run_extract_windows_with_en_prompt.py` | 记忆抽取 helper：构造 prompt、调用模型、解析 JSON、归一化 memory。 |
+| `extract_helpers.py` | 记忆抽取 helper：构造 prompt、调用模型、解析 JSON、归一化 memory。 |
+| `run_batch_extract.py` | 批量记忆抽取入口：遍历所有 record，逐窗口调用 helper 抽取并输出结果。 |
 | `__init__.py` | 包标记文件。 |
 
 ## 与旧路径的关系
@@ -20,7 +21,7 @@ projects/submit/longmemeval/run_extract_windows_with_en_prompt.py
 现在仅保留为兼容 wrapper，新代码请使用：
 
 ```text
-projects/submit/longmemeval/memory_constructor/run_extract_windows_with_en_prompt.py
+projects/submit/longmemeval/memory_constructor/extract_helpers.py
 ```
 
 ## 输入来源
@@ -46,7 +47,7 @@ results/segments/compressed/<run_name>/<question_type>/<sample_id>/windows/windo
 
 ## 主要 helper
 
-`run_extract_windows_with_en_prompt.py` 提供：
+`extract_helpers.py` 提供：
 
 - `_build_prompt(...)`
 - `_call_chat(...)`

@@ -102,20 +102,37 @@ All intermediate and final results are saved under `./results/` (auto-created). 
 ```
 results/
 ├── segments/              # LongMemEval segmented windows
+│   └── raw/<run_name>/
 ├── compressed/            # (Optional) compressed segments
-├── memories/              # Extracted structured memories
-├── query_analysis/        # Parsed queries
-├── retrieval/             # Multi-route retrieval results
-├── qa/                    # QA answers
-├── judge/                 # Judge verdicts
+│   └── <run_name>/
+├── memories/              # LongMemEval extracted structured memories
+│   └── <run_name>/
+├── query_analysis/        # LongMemEval parsed queries
+│   └── <run_name>/
+├── retrieval/             # LongMemEval multi-route retrieval results
+│   └── <run_name>/
+├── qa/                    # LongMemEval QA answers
+│   └── <run_name>/
+├── judge/                 # LongMemEval judge verdicts
+│   └── <run_name>/
 │
-├── locomo_segments/       # LoCoMo segmented windows
-├── locomo_memory/         # LoCoMo extracted memories
-├── locomo_query_analysis/ # LoCoMo parsed queries
-├── locomo_retrieval/      # LoCoMo retrieval (bm25/minilm/structured)
-├── locomo_qa/             # LoCoMo QA answers
-└── locomo_judge/          # LoCoMo judge verdicts
+├── segments/              # LoCoMo segmented windows
+│   └── raw/<run_name>/
+├── memory/                # LoCoMo extracted memories
+│   └── <run_name>/
+├── query_analysis/        # LoCoMo parsed queries (shared path with LongMemEval)
+│   └── <run_name>/
+├── retrieval/             # LoCoMo retrieval (bm25/minilm/structured) (shared path)
+│   ├── bm25/<run_name>/
+│   ├── minilm/<run_name>/
+│   └── structured/<run_name>/
+├── qa/                    # LoCoMo QA answers (shared path)
+│   └── <run_name>/
+└── judge/                 # LoCoMo judge verdicts (shared path)
+    └── <run_name>/
 ```
+
+**Note**: Both benchmarks can share the same `results/` directory. Use different `<run_name>` values to keep experiments separate, or use the same run name if processing different datasets in the same experiment.
 
 ## Requirements
 
@@ -162,13 +179,21 @@ python longmemeval/compressor/build_compressed_segments.py \
 
 #### Step 3: Extract structured memories
 
-The memory extraction module (`longmemeval/memory_constructor/run_extract_windows_with_en_prompt.py`) is a library that provides prompt-building and normalization functions. It is imported by the extraction pipeline scripts rather than invoked directly from the CLI. See `quick_start/quickstart_extract.py` for a self-contained usage example.
+```bash
+python longmemeval/memory_constructor/run_batch_extract.py \
+  --segments-root ./results/segments/raw/<run_name> \
+  --output-root ./results/memories \
+  --run-name <run_name> \
+  --overlap 5 \
+  --base-url http://localhost:7790/v1 \
+  --api-key EMPTY \
+  --model-name qwen3-30b-a3b \
+  --max-tokens 16384 \
+  --timeout 600 \
+  --max-retries 5
+```
 
-Key functions:
-- `_build_prompt(conversation, window_index, overlap_count)` — fills the extraction prompt template
-- `_call_chat(base_url, api_key, model_name, prompt, max_tokens)` — calls the LLM
-- `_safe_json_fragment(text)` — parses JSON from LLM response
-- `_normalize_memory_entry(row, source_time_map)` — normalizes each extracted memory with `DimensionMemory`
+The memory extraction module (`longmemeval/memory_constructor/extract_helpers.py`) provides helper functions for prompt-building and normalization. See `quick_start/quickstart_extract.py` for a self-contained usage example.
 
 #### Step 4: Query analysis
 
@@ -176,17 +201,32 @@ Key functions:
 python longmemeval/query_parser/run_query_analysis.py \
   --input-root ./data/longmemeval_s_cleaned.json \
   --output-base ./results/query_analysis \
+  --run-name <run_name> \
   --base-url http://localhost:7790/v1 \
-  --model-name qwen3-30b-a3b
+  --api-key EMPTY \
+  --model-name qwen3-30b-a3b \
+  --max-samples 1
 ```
+
+> Use `--max-samples 0` to process all samples, or specify a number to limit processing.
 
 #### Step 5: Retrieval
 
 ```bash
 python longmemeval/search/retrieve_from_parsed_query.py \
-  --query-parsed ./results/query_analysis/<question_type>/<sample_id>/parsed.json \
-  --memory-dir ./results/memories/<question_type>/<sample_id> \
-  --output-root ./results/retrieval \
+  --query-parsed ./results/query_analysis/<run_name>/<question_type>/<sample_id>/parsed.json \
+  --memory-dir ./results/memories/<run_name>/<question_type>/<sample_id> \
+  --output-root ./results/retrieval/<run_name> \
+  --embedding-model /path/to/all-MiniLM-L6-v2
+```
+
+Example for a specific sample:
+
+```bash
+python longmemeval/search/retrieve_from_parsed_query.py \
+  --query-parsed ./results/query_analysis/demo/single-session-user/0000_e47becba/parsed.json \
+  --memory-dir ./results/memories/demo/single-session-user/0000_e47becba \
+  --output-root ./results/retrieval/demo \
   --embedding-model /path/to/all-MiniLM-L6-v2
 ```
 
@@ -196,7 +236,15 @@ python longmemeval/search/retrieve_from_parsed_query.py \
 python longmemeval/qa_judge/run_qa_judge_from_retrieval.py
 ```
 
-This script reads from hardcoded paths under `results/` (`retrieval/`, `query_analysis/`, `qa/`, `judge/`). Ensure the previous steps have populated these directories.
+**Important**: This script uses hardcoded paths and API configuration. Before running, edit the script to set:
+
+- `RETRIEVAL_ROOT`: Path to retrieval results (e.g., `SUBMIT_ROOT / "results/retrieval/<run_name>/<question_type>/<sample_id>"`)
+- `QUERY_ANALYSIS_ROOT`: Path to query analysis results (e.g., `SUBMIT_ROOT / "results/query_analysis/<run_name>"`)
+- `QA_ROOT`: Output path for QA results (e.g., `SUBMIT_ROOT / "results/qa/<run_name>"`)
+- `JUDGE_ROOT`: Output path for judge results (e.g., `SUBMIT_ROOT / "results/judge/<run_name>"`)
+- `MODEL_NAME`, `BASE_URL`, `API_KEY`: LLM API configuration
+
+The script iterates through `RETRIEVAL_ROOT/<question_type>/<method>/<sample_id>/top_records.json`, generates QA answers, and judges them against gold answers.
 
 #### Generate Report
 
@@ -204,6 +252,15 @@ This script reads from hardcoded paths under `results/` (`retrieval/`, `query_an
 python longmemeval/qa_judge/run_report.py \
   --judge-root ./results/judge/<run_name>
 ```
+
+Example:
+
+```bash
+python longmemeval/qa_judge/run_report.py \
+  --judge-root ./results/judge/demo
+```
+
+Generates `report.md` with overall accuracy and breakdowns by question type and retrieval method.
 
 ---
 
@@ -228,84 +285,132 @@ python locomo/compressor/build_compressed_segments.py \
   --rate 0.5
 ```
 
-#### Step 3: Extract memories (parallel)
+#### Step 3: Extract memories
+
+Single record (parallel per window):
 
 ```bash
-python locomo/memory_constructor/build_one_record_parallel.py \
+python locomo/memory_constructor/extract_single_record.py \
   --record-dir ./results/locomo_segments/raw/<run_name>/<conv>/ \
   --output-record-dir ./results/locomo_memory/<conv>/ \
+  --overlap 5 \
   --base-urls http://localhost:7790/v1 \
   --model-name qwen3-30b-a3b \
   --workers 4
 ```
 
-Or process all records from compressed segments sequentially:
+Batch mode (all records sequentially):
 
 ```bash
-python locomo/memory_constructor/build_memories_from_compressed.py \
-  --compressed-root ./results/locomo_segments/compressed/<run_name> \
+python locomo/memory_constructor/run_batch_extract.py \
+  --compressed-root ./results/locomo_segments/raw/<run_name> \
   --output-root ./results/locomo_memory \
+  --run-name <run_name> \
+  --overlap 5 \
   --base-url http://localhost:7790/v1 \
   --model-name qwen3-30b-a3b
 ```
+
+> Note: `--compressed-root` accepts either raw or compressed segment directories.
 
 #### Step 4: Query analysis
 
 ```bash
 python locomo/query_parser/run_query_analysis_by_conv.py \
   --input-root ./data/locomo10.json \
-  --output-base ./results/locomo_query_analysis \
+  --output-base ./results/query_analysis \
+  --run-name <run_name> \
   --base-url http://localhost:7790/v1 \
-  --model-name qwen3-30b-a3b
+  --api-key EMPTY \
+  --model-name qwen3-30b-a3b \
+  --max-tokens 4096 \
+  --timeout 600 \
+  --max-retries 3 \
+  --exclude-categories 5
 ```
+
+Use `--exclude-categories 5` to skip category 5 questions. Use `--max-convs` and `--max-questions-per-conv` to limit processing (0 means all).
 
 #### Step 5: Retrieval (multi-route)
 
 ```bash
 # BM25
 python locomo/search/run_retrieval_bm25.py \
-  --query-run-root ./results/locomo_query_analysis/<run_name> \
-  --memory-root ./results/locomo_memory \
-  --output-base ./results/locomo_retrieval
+  --query-run-root ./results/query_analysis/<run_name> \
+  --memory-root ./results/memory \
+  --output-base ./results/retrieval \
+  --run-name <run_name>
 
 # Dense (MiniLM)
 python locomo/search/run_retrieval_minilm.py \
-  --query-run-root ./results/locomo_query_analysis/<run_name> \
-  --memory-root ./results/locomo_memory \
-  --output-base ./results/locomo_retrieval \
+  --query-run-root ./results/query_analysis/<run_name> \
+  --memory-root ./results/memory \
+  --output-base ./results/retrieval \
+  --run-name <run_name> \
   --embedding-model /path/to/all-MiniLM-L6-v2
 
 # Structured
 python locomo/search/run_retrieval_from_query_analysis.py \
-  --query-run-root ./results/locomo_query_analysis/<run_name> \
-  --memory-root ./results/locomo_memory \
-  --output-base ./results/locomo_retrieval
+  --query-run-root ./results/query_analysis/<run_name> \
+  --memory-root ./results/memory \
+  --output-base ./results/retrieval \
+  --run-name <run_name>
 ```
 
 #### Step 6: QA generation
 
+**Option A: Single retrieval route**
+
+```bash
+python locomo/qa/run_qa_from_retrieval.py \
+  --retrieval-root ./results/retrieval/<run_name> \
+  --query-root ./results/query_analysis/<run_name> \
+  --output-base ./results/qa \
+  --run-name <run_name> \
+  --base-url http://localhost:7790/v1 \
+  --api-key EMPTY \
+  --model-name qwen3-30b-a3b \
+  --timeout 600 \
+  --max-tokens 2048 \
+  --max-retries 3
+```
+
+**Option B: Merge three retrieval routes**
+
 ```bash
 python locomo/qa/run_qa_from_three_retrievals.py \
-  --query-root ./results/locomo_query_analysis/<run_name> \
-  --bm25-root ./results/locomo_retrieval/bm25/<run_name> \
-  --minilm-root ./results/locomo_retrieval/minilm/<run_name> \
-  --structured-root ./results/locomo_retrieval/structured/<run_name> \
-  --output-base ./results/locomo_qa \
+  --query-root ./results/query_analysis/<run_name> \
+  --bm25-root ./results/retrieval/bm25/<run_name> \
+  --minilm-root ./results/retrieval/minilm/<run_name> \
+  --structured-root ./results/retrieval/structured/<run_name> \
+  --output-base ./results/qa \
+  --run-name <run_name> \
   --base-url http://localhost:7790/v1 \
-  --model-name qwen3-30b-a3b
+  --api-key EMPTY \
+  --model-name qwen3-30b-a3b \
+  --timeout 600 \
+  --max-retries 3
 ```
 
 #### Step 7: Judge
 
 ```bash
 python locomo/judge/run_judge_from_qa.py \
-  --qa-root ./results/locomo_qa/<run_name> \
+  --qa-root ./results/qa/<run_name> \
   --conv-json ./data/locomo10.json \
-  --output-base ./results/locomo_judge \
-  --base-url https://api.example.com/v1 \
-  --api-key <key> \
-  --model-name gpt-4.1-mini
+  --output-base ./results/judge \
+  --run-name <run_name> \
+  --base-url http://localhost:7790/v1 \
+  --api-key EMPTY \
+  --model-name gpt-4.1-mini \
+  --timeout 600 \
+  --max-tokens 512 \
+  --max-retries 3
 ```
+
+Use `--conv-name <conv_name>` to judge only a specific conversation (e.g., `--conv-name conv-26`).
+
+Generates `report.md` with overall accuracy and breakdowns by conversation and category.
 
 ---
 
@@ -316,10 +421,24 @@ Both benchmarks share an offline memory update module that detects contradiction
 ```bash
 python longmemeval/update/run_update.py \
   --method dimmem \
-  --memory-root ./results/memories/ \
+  --memory-root ./results/memories/<run_name> \
   --dataset longmemeval \
   --output ./results/update_output/ \
   --base-url http://localhost:7790/v1 \
+  --api-key EMPTY \
+  --model-name qwen3-30b-a3b
+```
+
+For LoCoMo:
+
+```bash
+python longmemeval/update/run_update.py \
+  --method dimmem \
+  --memory-root ./results/memory/<run_name> \
+  --dataset locomo \
+  --output ./results/update_output/ \
+  --base-url http://localhost:7790/v1 \
+  --api-key EMPTY \
   --model-name qwen3-30b-a3b
 ```
 
@@ -339,6 +458,6 @@ Supported `--method`: `lightmem`, `dimmem`. Supported `--dataset`: `longmemeval`
 
 ## Models Used
 
-- **Memory Extraction**: Qwen3-30B-A3B (or fine-tuned Qwen3-4B)
-- **Embedding**: all-MiniLM-L6-v2 (384-dim)
+- **Memory Extraction / Query Analysis**: Qwen3-30B-A3B (or fine-tuned Qwen3-4B), via OpenAI-compatible API (e.g., vLLM, StepFun)
+- **Embedding**: all-MiniLM-L6-v2 (384-dim), loaded locally via `sentence-transformers`
 - **QA + Judge**: gpt-4.1-mini (or any OpenAI-compatible model)

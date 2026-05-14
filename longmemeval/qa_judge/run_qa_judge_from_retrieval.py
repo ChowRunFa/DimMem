@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
@@ -17,14 +18,15 @@ if str(LONGMEMEVAL_DIR) not in sys.path:
 
 from prompts.qa_prompts import build_qa_payload
 from prompts.judge_prompts import build_judge_payload
-RETRIEVAL_ROOT = SUBMIT_ROOT / "results/retrieval"
-QUERY_ANALYSIS_ROOT = SUBMIT_ROOT / "results/query_analysis"
-QA_ROOT = SUBMIT_ROOT / "results/qa"
-JUDGE_ROOT = SUBMIT_ROOT / "results/judge"
 
-MODEL_NAME = "jiaorong-qwen3-80b-instruct"
-BASE_URL = "https://c4ai.ccccltd.cn/api/compatible/v1"
-API_KEY = "sk-TdEsLfD17ERBPSUYvBGMMoXnh2QXhQVP"
+# Global variables to be set by CLI args
+RETRIEVAL_ROOT = None
+QUERY_ANALYSIS_ROOT = None
+QA_ROOT = None
+JUDGE_ROOT = None
+MODEL_NAME = None
+BASE_URL = None
+API_KEY = None
 
 
 def _clean(value: Any) -> str:
@@ -131,6 +133,31 @@ def _write_json(path: Path, payload: Dict[str, Any]) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Run LongMemEval QA + Judge from retrieval results.")
+    parser.add_argument("--retrieval-root", type=Path, required=True,
+                        help="Path to retrieval results (e.g., ./results/retrieval/<run_name>)")
+    parser.add_argument("--query-root", type=Path, required=True,
+                        help="Path to query analysis results (e.g., ./results/query_analysis/<run_name>)")
+    parser.add_argument("--output-base", type=Path, default=Path("./results"),
+                        help="Base output directory")
+    parser.add_argument("--run-name", required=True,
+                        help="Run name for output directories")
+    parser.add_argument("--base-url", default="http://localhost:7790/v1")
+    parser.add_argument("--api-key", default="EMPTY")
+    parser.add_argument("--model-name", default="gpt-4o-mini")
+    args = parser.parse_args()
+
+    global RETRIEVAL_ROOT, QUERY_ANALYSIS_ROOT, QA_ROOT, JUDGE_ROOT
+    global MODEL_NAME, BASE_URL, API_KEY
+
+    RETRIEVAL_ROOT = args.retrieval_root.resolve()
+    QUERY_ANALYSIS_ROOT = args.query_root.resolve()
+    QA_ROOT = args.output_base.resolve() / "qa" / args.run_name
+    JUDGE_ROOT = args.output_base.resolve() / "judge" / args.run_name
+    MODEL_NAME = args.model_name
+    BASE_URL = args.base_url
+    API_KEY = args.api_key
+
     targets = list(_iter_retrieval_dirs(RETRIEVAL_ROOT))
     for question_type, method, sample_id, retrieval_dir in targets:
         input_json = QUERY_ANALYSIS_ROOT / question_type / sample_id / "input.json"
@@ -144,8 +171,9 @@ def main() -> None:
 
         query = _clean(input_payload.get("question"))
         gold_answer = input_payload.get("answer")
+        question_date = _clean(input_payload.get("question_date"))
 
-        qa_payload = build_qa_payload(query=query, retrieved_records=filtered_records)
+        qa_payload = build_qa_payload(query=query, question_date=question_date, retrieved_records=filtered_records)
         qa_resp_json = _chat(qa_payload["prompt"])
         qa_raw = _extract_message(qa_resp_json)
         qa_parsed = _parse_answer(qa_raw)

@@ -34,11 +34,11 @@ Output format:
 Reasoning: <brief reasoning>
 Answer: <final answer>
 
-User Question:
-{{query}}
-
 Retrieved Memories:
 {{retrieved_memories}}
+
+User Question:
+{{query}}
 """
 
 
