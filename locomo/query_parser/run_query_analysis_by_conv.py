@@ -28,7 +28,7 @@ def _extract_prompt_constant(name: str) -> str:
     return match.group(1)
 
 
-QUERY_PROMPT_TEMPLATE = _extract_prompt_constant("LONGMEMEVAL_QUERY_ANALYSIS_PROMPT")
+QUERY_PROMPT_TEMPLATE = _extract_prompt_constant("LOCOMO_QUERY_ANALYSIS_PROMPT")
 
 
 def _safe_json_fragment(text: str) -> Any:
@@ -53,7 +53,7 @@ def _safe_json_fragment(text: str) -> Any:
 
 
 def _build_prompt(question: str) -> str:
-    return QUERY_PROMPT_TEMPLATE.replace("{{question}}", str(question or "").strip())
+    return QUERY_PROMPT_TEMPLATE.replace("{question}", str(question or "").strip())
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -111,12 +111,15 @@ def _load_questions(path: Path) -> List[Dict[str, Any]]:
     return out
 
 
-def _load_conversations(input_root: Path) -> List[Dict[str, Any]]:
+def _load_conversations(input_root: Path, exclude_categories: List[int] | None = None) -> List[Dict[str, Any]]:
     """Load conversations from either a single JSON file or a directory.
 
     Single file (locomo10.json): list of conversations with 'qa' field.
     Directory: look for */locomo10_questions_only.json files (legacy format).
     """
+    if exclude_categories is None:
+        exclude_categories = []
+
     if input_root.is_file():
         data = json.loads(input_root.read_text(encoding="utf-8"))
         if not isinstance(data, list):
@@ -127,6 +130,10 @@ def _load_conversations(input_root: Path) -> List[Dict[str, Any]]:
             questions = []
             for i, q in enumerate(item.get("qa") or []):
                 if not isinstance(q, dict):
+                    continue
+                # Filter by category if specified
+                category = q.get("category")
+                if category is not None and int(category) in exclude_categories:
                     continue
                 questions.append({"index": i, "question": str(q.get("question") or "").strip(), "raw": q})
             result.append({"conv_name": conv_name, "questions": questions})
@@ -150,7 +157,7 @@ def run(args: argparse.Namespace) -> Path:
     run_root = args.output_base / run_name
     run_root.mkdir(parents=True, exist_ok=True)
 
-    conversations = _load_conversations(args.input_root)
+    conversations = _load_conversations(args.input_root, exclude_categories=args.exclude_categories)
     if args.max_convs > 0:
         conversations = conversations[: args.max_convs]
 
@@ -305,6 +312,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-retries", type=int, default=3)
     parser.add_argument("--max-convs", type=int, default=0, help="0 means all")
     parser.add_argument("--max-questions-per-conv", type=int, default=0, help="0 means all")
+    parser.add_argument("--exclude-categories", type=int, nargs="*", default=[], help="Categories to exclude (e.g., 5)")
     parser.add_argument("--no-resume", action="store_false", dest="resume")
     parser.set_defaults(resume=True)
     return parser

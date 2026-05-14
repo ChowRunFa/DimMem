@@ -114,12 +114,15 @@ def run_retrieval(
 
     question_type = query_parsed.parent.parent.name
 
-    embedding_client = LocalEmbeddingClient(
-        model=embedding_model,
-        device=embedding_device,
-        batch_size=32,
-    )
     parse_mode = _clean(parsed_query.get("parse_mode")).lower() or "structured"
+    if parse_mode in {"structured", ""}:
+        embedding_client = None
+    else:
+        embedding_client = LocalEmbeddingClient(
+            model=embedding_model,
+            device=embedding_device,
+            batch_size=32,
+        )
     if parse_mode in {"rrf_hybrid", "rrf", "hybrid", "fused"}:
         search_result = search_top15_content_dedup(
             parsed_query=parsed_query,

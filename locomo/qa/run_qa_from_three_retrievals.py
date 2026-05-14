@@ -127,9 +127,9 @@ def _merge_three_routes(
             item = dict(r)
             item["_route"] = route_name
             merged.append(item)
-            if len(merged) >= max_merged:
+            if max_merged > 0 and len(merged) >= max_merged:
                 break
-        if len(merged) >= max_merged:
+        if max_merged > 0 and len(merged) >= max_merged:
             break
 
     return merged, {"route_input_counts": route_counts, "merged_count": len(merged)}
@@ -322,7 +322,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--output-base", type=Path, required=True)
     p.add_argument("--run-name", default="")
     p.add_argument("--top-n-each", type=int, default=10)
-    p.add_argument("--max-merged", type=int, default=30)
+    p.add_argument("--max-merged", type=int, default=0, help="Max merged records (0 = no limit)")
     p.add_argument("--base-url", required=True)
     p.add_argument("--api-key", default="EMPTY")
     p.add_argument("--model-name", default="qwen3-30b-a3b")

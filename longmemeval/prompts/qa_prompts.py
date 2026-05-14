@@ -42,7 +42,6 @@ Retrieved Memories:
 Now answer the question:
 User Question:{{query}}
 Question Date:{{question_date}}
-
 """
 
 

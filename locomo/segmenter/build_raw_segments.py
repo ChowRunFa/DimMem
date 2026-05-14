@@ -139,12 +139,17 @@ def _build_windows(turns: List[Turn], *, window_size: int, overlap: int) -> List
         chunk = rows[start : start + window_size]
         if not chunk:
             break
-        if len(chunk) < window_size and start != 0:
-            break
+        # Keep the last window even if it's shorter than window_size
+        pass
+        window_idx = len(windows)
+        overlap_count = overlap if window_idx > 0 else 0
+        extract_start_index = overlap_count + 1
         windows.append(
             {
-                "window_index": len(windows),
+                "window_index": window_idx,
                 "message_count": len(chunk),
+                "overlap_count": overlap_count,
+                "extract_start_message_index": extract_start_index,
                 "start_global_turn_index": chunk[0]["global_turn_index"],
                 "end_global_turn_index": chunk[-1]["global_turn_index"],
                 "start_timestamp": chunk[0]["timestamp"],

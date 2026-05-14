@@ -114,7 +114,7 @@ def _extract_text(response_json: Dict[str, Any]) -> str:
 
 
 def _window_paths(windows_dir: Path) -> List[Path]:
-    return sorted(windows_dir.glob("window_*.json"))
+    return sorted(p for p in windows_dir.glob("window_*.json") if "_assistant_replies" not in p.name)
 
 
 def _load_window(window_path: Path) -> Dict[str, Any]:

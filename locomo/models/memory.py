@@ -89,7 +89,6 @@ class DimensionMemory:
 class ParsedQuery:
     """Normalized result from the query parser."""
 
-    parse_mode: str = ""
     query_anchor: str = ""
     target_memory_type: List[str] = field(default_factory=list)
     time: str = ""
@@ -103,7 +102,6 @@ class ParsedQuery:
         data = payload if isinstance(payload, dict) else {}
         dimension = data.get("dimension") if isinstance(data.get("dimension"), dict) else {}
         return cls(
-            parse_mode=clean(data.get("parse_mode")),
             query_anchor=clean(data.get("query_anchor")),
             target_memory_type=unique_string_list(dimension.get("target_memory_type"), lower_dedupe=True),
             time=clean(dimension.get("time")),
@@ -126,7 +124,6 @@ class ParsedQuery:
         data = dict(self.raw)
         data.update(
             {
-                "parse_mode": self.parse_mode,
                 "query_anchor": self.query_anchor,
                 "dimension": self.dimension,
                 "answer_dim": self.answer_dim,
