@@ -17,7 +17,7 @@
 ## Features
 
 - **Dimension Memory Model** — Each memory record carries structured fields (type, time, location, reason, purpose, keywords), enabling precise multi-dimensional retrieval
-- **Three-Route Retrieval Fusion** — BM25 + dense embedding (MiniLM) + structured dimension matching, fused via RRF
+- **Three-Route Retrieval Fusion** — BM25 + dense embedding (MiniLM) + structured dimension matching, merged with content deduplication
 - **7-Step Evaluation Pipeline** — Segmentation → Compression → Extraction → Query Analysis → Retrieval → QA → Judge
 - **Dynamic Assistant Context** — Automatically determines whether to attach AI responses, saving ~89% context lookups
 - **Dual Benchmark Support** — Full pipelines for both [LongMemEval](https://github.com/xiaowu0162/LongMemEval) and [LoCoMo](https://github.com/snap-stanford/LoCoMo)
@@ -254,7 +254,7 @@ DimMem/
 │   ├── compressor/         #   Step 2
 │   ├── memory_constructor/ #   Step 3
 │   ├── query_parser/       #   Step 4
-│   ├── search/             #   Step 5 (BM25 + embedding + structured + RRF)
+│   ├── search/             #   Step 5 (BM25 + embedding + structured + dedup)
 │   ├── qa_judge/           #   Steps 6+7
 │   └── update/             #   Memory update
 ├── locomo/                 # LoCoMo pipeline (same structure)
