@@ -5,7 +5,7 @@
 <h1 align="center">DimMem</h1>
 
 <p align="center">
-  Dimension-aware Structured Memory for Long-conversation QA Evaluation
+  Dimensional Structuring for Efficient Long-Term Agent Memory
   <br>
   <a href="README_zh.md">中文版</a>
 </p>

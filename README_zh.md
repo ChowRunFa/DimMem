@@ -5,7 +5,7 @@
 <h1 align="center">DimMem</h1>
 
 <p align="center">
-  面向长对话 QA 评估的维度感知结构化记忆系统
+  Dimensional Structuring for Efficient Long-Term Agent Memory
   <br>
   <a href="README.md">English</a>
 </p>
