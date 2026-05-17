@@ -17,7 +17,7 @@
 ## 特性
 
 - **维度记忆模型** — 每条记忆附带结构化维度字段（类型、时间、地点、原因、目的、关键词），支持多维精准检索
-- **三路检索融合** — BM25 + 稠密向量（MiniLM）+ 结构化维度匹配，通过 RRF 融合排序
+- **三路检索融合** — BM25 + 稠密向量（MiniLM）+ 结构化维度匹配，基于内容去重合并
 - **7 步评估流水线** — 分割 → 压缩 → 抽取 → 查询分析 → 检索 → QA → 评判
 - **动态助手上下文** — 自动判断是否需要附加 AI 回复，节省约 89% 的上下文查找开销
 - **双基准支持** — 完整支持 [LongMemEval](https://github.com/xiaowu0162/LongMemEval) 和 [LoCoMo](https://github.com/snap-stanford/LoCoMo) 两个基准测试
@@ -254,7 +254,7 @@ DimMem/
 │   ├── compressor/         #   步骤 2
 │   ├── memory_constructor/ #   步骤 3
 │   ├── query_parser/       #   步骤 4
-│   ├── search/             #   步骤 5 (BM25 + 向量 + 结构化 + RRF)
+│   ├── search/             #   步骤 5 (BM25 + 向量 + 结构化 + 去重)
 │   ├── qa_judge/           #   步骤 6+7
 │   └── update/             #   记忆更新
 ├── locomo/                 # LoCoMo 流水线（同上结构）
