@@ -12,6 +12,7 @@ V2 changes:
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -19,9 +20,9 @@ from typing import Any, Dict, List, Tuple
 
 import requests
 
-DEFAULT_BASE_URL = "https://models-proxy.stepfun-inc.com/v1"
-DEFAULT_API_KEY = "***REMOVED***"
-DEFAULT_MODEL = "gpt-4.1-mini"
+DEFAULT_BASE_URL = os.environ.get("BASE_URL", "")
+DEFAULT_API_KEY = os.environ.get("API_KEY", "")
+DEFAULT_MODEL = os.environ.get("MODEL", "gpt-4.1-mini")
 
 
 def _clean(v: Any) -> str:
