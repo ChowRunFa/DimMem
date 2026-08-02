@@ -109,6 +109,15 @@ def _iter_record_dirs(raw_run_root: Path) -> List[Path]:
     return rows
 
 
+def _iter_primary_window_jsons(windows_dir: Path) -> List[Path]:
+    """枚举形如 ``window_0000.json`` 的主窗口文件。"""
+    return sorted(
+        path
+        for path in windows_dir.glob("window_*.json")
+        if path.stem[len("window_") :].isdigit()
+    )
+
+
 def _compress_record(
     *,
     input_record_dir: Path,
@@ -131,7 +140,7 @@ def _compress_record(
     src_summary = _load_json(input_record_dir / "summary.json")
     compressed_windows_meta: List[Dict[str, Any]] = []
 
-    for window_json in sorted((input_record_dir / "windows").glob("window_*.json")):
+    for window_json in _iter_primary_window_jsons(input_record_dir / "windows"):
         compressed_payload = _compress_window_json(
             window_path=window_json,
             compressor=compressor,
